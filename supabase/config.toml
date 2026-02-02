@@ -1,0 +1,67 @@
+# Supabase Configuration
+# https://supabase.com/docs/guides/cli/config
+
+[project]
+id = "mliivcgiyezaltfbnpzb"
+
+[api]
+# Port to use for the API URL.
+port = 54321
+# Schemas to expose in your API.
+schemas = ["public", "graphql_public"]
+# Extra schemas to add to the search_path of every request.
+extra_search_path = ["public", "extensions"]
+# The maximum number of rows returns from a view, table, or stored procedure.
+max_rows = 1000
+
+[db]
+# Port to use for the local database URL.
+port = 54322
+# The database major version to use.
+major_version = 15
+
+[studio]
+# Port to use for Supabase Studio.
+port = 54323
+
+[auth]
+# The base URL of your website.
+site_url = "http://localhost:3000"
+# A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
+additional_redirect_urls = ["commonplace://auth/callback"]
+# How long tokens are valid for, in seconds.
+jwt_expiry = 3600
+# Allow/disallow new user signups to your project.
+enable_signup = true
+
+[auth.email]
+# Allow/disallow new user signups via email to your project.
+enable_signup = true
+# If enabled, a user will be required to confirm any email change on both the old, and new email addresses.
+double_confirm_changes = true
+# If enabled, users need to confirm their email address before signing in.
+enable_confirmations = false
+
+[functions.process-url]
+# Verify JWT tokens for authentication
+verify_jwt = true
+
+[functions.generate-pdf]
+# Verify JWT tokens for authentication
+verify_jwt = true
+
+[functions.generate-posts]
+# Verify JWT tokens for authentication
+verify_jwt = true
+
+[functions.oauth-connect]
+# Verify JWT tokens for authentication
+verify_jwt = true
+
+[functions.analyze-style]
+# Verify JWT tokens for authentication
+verify_jwt = true
+
+[functions.synthesize-content]
+# Verify JWT tokens for authentication
+verify_jwt = true
