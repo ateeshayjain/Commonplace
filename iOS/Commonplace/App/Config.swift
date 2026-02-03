@@ -2,9 +2,21 @@ import Foundation
 
 enum Config {
     // MARK: - Supabase Configuration
-    // Replace these with your actual Supabase project credentials
-    static let supabaseURL = "https://mliivcgiyezaltfbnpzb.supabase.co"
-    static let supabaseAnonKey = "sb_publishable_YjzWV4ADSZUq8c5zb6ddMA_Ys-zxYCB"
+    // Reads from Info.plist (via xcconfig) if available, otherwise uses defaults.
+    // To use xcconfig: set Config.xcconfig as the project's base configuration in Xcode.
+    static let supabaseURL: String = {
+        if let value = Bundle.main.infoDictionary?["SUPABASE_URL"] as? String, !value.isEmpty {
+            return "https://\(value)"
+        }
+        return "https://mliivcgiyezaltfbnpzb.supabase.co"
+    }()
+
+    static let supabaseAnonKey: String = {
+        if let value = Bundle.main.infoDictionary?["SUPABASE_ANON_KEY"] as? String, !value.isEmpty {
+            return value
+        }
+        return "sb_publishable_YjzWV4ADSZUq8c5zb6ddMA_Ys-zxYCB"
+    }()
 
     // MARK: - App Configuration
     static let appGroupIdentifier = "group.app.commonplace"

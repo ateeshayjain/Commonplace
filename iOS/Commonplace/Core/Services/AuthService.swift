@@ -87,10 +87,6 @@ class AuthService: NSObject, ObservableObject {
             throw AuthError.signUpFailed
         }
 
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("SignUp Response: \(responseString)")
-        }
-
         guard (200...299).contains(httpResponse.statusCode) else {
             // Check if user already exists
             if let responseString = String(data: data, encoding: .utf8),
@@ -130,10 +126,6 @@ class AuthService: NSObject, ObservableObject {
             throw AuthError.signInFailed
         }
 
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("SignIn Response: \(responseString)")
-        }
-
         guard (200...299).contains(httpResponse.statusCode) else {
             throw AuthError.invalidCredentials
         }
@@ -142,18 +134,82 @@ class AuthService: NSObject, ObservableObject {
         await handleAuthResponse(authResponse)
     }
 
-    // Legacy methods for compatibility
-    func sendMagicLink(email: String) async throws {
-        // Now unused - redirect to password flow
-        throw AuthError.magicLinkFailed
+    // MARK: - Email OTP Authentication
+
+    func sendOTP(email: String) async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        let body: [String: Any] = [
+            "email": email,
+            "create_user": true  // Create user if doesn't exist
+        ]
+
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+        var request = URLRequest(url: URL(string: "\(Config.supabaseURL)/auth/v1/otp")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.httpBody = bodyData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.otpSendFailed
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("OTP send error: \(responseString)")
+            }
+            throw AuthError.otpSendFailed
+        }
     }
 
     func verifyOTP(email: String, token: String) async throws {
-        // Now unused - redirect to password flow
-        throw AuthError.invalidOTP
+        isLoading = true
+        defer { isLoading = false }
+
+        let body: [String: Any] = [
+            "email": email,
+            "token": token,
+            "type": "email"
+        ]
+
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+        var request = URLRequest(url: URL(string: "\(Config.supabaseURL)/auth/v1/verify")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.httpBody = bodyData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.otpVerifyFailed
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("OTP verify error: \(responseString)")
+                if responseString.contains("expired") {
+                    throw AuthError.otpExpired
+                }
+            }
+            throw AuthError.invalidOTP
+        }
+
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        await handleAuthResponse(authResponse)
     }
 
     // MARK: - Demo Mode (for testing without Supabase)
+
+    var isDemoMode: Bool {
+        currentUser?.email == "demo@commonplace.app"
+    }
 
     func signInDemo() {
         isLoading = true
@@ -304,22 +360,20 @@ struct AuthUser: Codable {
 
 enum AuthError: LocalizedError {
     case appleSignInFailed
-    case magicLinkFailed
-    case invalidOTP
     case sessionExpired
     case signUpFailed
     case signInFailed
     case invalidCredentials
     case userAlreadyExists
+    case otpSendFailed
+    case otpVerifyFailed
+    case invalidOTP
+    case otpExpired
 
     var errorDescription: String? {
         switch self {
         case .appleSignInFailed:
             return "Sign in with Apple failed. Please try again."
-        case .magicLinkFailed:
-            return "Failed to send magic link. Please check your email and try again."
-        case .invalidOTP:
-            return "Invalid verification code. Please try again."
         case .sessionExpired:
             return "Your session has expired. Please sign in again."
         case .signUpFailed:
@@ -330,6 +384,14 @@ enum AuthError: LocalizedError {
             return "Invalid email or password. Please try again."
         case .userAlreadyExists:
             return "An account with this email already exists. Please sign in instead."
+        case .otpSendFailed:
+            return "Failed to send verification code. Please try again."
+        case .otpVerifyFailed:
+            return "Failed to verify code. Please try again."
+        case .invalidOTP:
+            return "Invalid verification code. Please check and try again."
+        case .otpExpired:
+            return "Verification code has expired. Please request a new one."
         }
     }
 }
@@ -343,7 +405,7 @@ class KeychainManager {
     private let account = "auth_token"
 
     func setAuthToken(_ token: String) {
-        let data = token.data(using: .utf8)!
+        guard let data = token.data(using: .utf8) else { return }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
