@@ -51,6 +51,33 @@ struct AuthView: View {
                 .frame(height: 50)
                 .cornerRadius(CPSpacing.cornerRadiusMedium)
 
+                // Sign in with Google
+                Button {
+                    Task {
+                        do {
+                            try await authService.signInWithGoogle()
+                        } catch {
+                            print("Google sign in error: \(error)")
+                            authService.error = error
+                        }
+                    }
+                } label: {
+                    HStack(spacing: CPSpacing.sm) {
+                        Image(systemName: "g.circle.fill")
+                            .font(.system(size: 20))
+                        Text("Continue with Google")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Color.white)
+                    .foregroundColor(.black)
+                    .cornerRadius(CPSpacing.cornerRadiusMedium)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: CPSpacing.cornerRadiusMedium)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                }
+
                 // Divider
                 HStack {
                     Rectangle()
@@ -189,7 +216,7 @@ struct EmailAuthSheet: View {
                     .font(.cpTitle2)
                     .padding(.top, CPSpacing.md)
 
-                Text("We'll send a 6-digit code to your email")
+                Text("We'll send an 8-digit code to your email")
                     .font(.cpBody)
                     .foregroundColor(.cpTextSecondary)
                     .multilineTextAlignment(.center)
@@ -252,12 +279,12 @@ struct EmailAuthSheet: View {
 
                 // OTP code field
                 VStack(alignment: .leading, spacing: CPSpacing.xs) {
-                    Text("6-digit code")
+                    Text("8-digit code")
                         .font(.cpSubhead)
                         .foregroundColor(.cpTextSecondary)
 
-                    TextField("000000", text: $otpCode)
-                        .font(.system(size: 32, weight: .medium, design: .monospaced))
+                    TextField("00000000", text: $otpCode)
+                        .font(.system(size: 28, weight: .medium, design: .monospaced))
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
                         .multilineTextAlignment(.center)
@@ -265,8 +292,8 @@ struct EmailAuthSheet: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(CPSpacing.cornerRadiusMedium)
                         .onChange(of: otpCode) { _, newValue in
-                            // Limit to 6 digits
-                            otpCode = String(newValue.filter { $0.isNumber }.prefix(6))
+                            // Limit to 8 digits
+                            otpCode = String(newValue.filter { $0.isNumber }.prefix(8))
                         }
                 }
 
@@ -293,11 +320,11 @@ struct EmailAuthSheet: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(otpCode.count == 6 ? Color.cpTint : Color.gray)
+                    .background(otpCode.count == 8 ? Color.cpTint : Color.gray)
                     .foregroundColor(.white)
                     .cornerRadius(CPSpacing.cornerRadiusMedium)
                 }
-                .disabled(otpCode.count != 6 || isLoading)
+                .disabled(otpCode.count != 8 || isLoading)
 
                 // Resend / Change email
                 HStack(spacing: CPSpacing.md) {

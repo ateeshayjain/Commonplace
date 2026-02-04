@@ -2,6 +2,7 @@ import Foundation
 import AuthenticationServices
 import SwiftUI
 import Security
+import GoogleSignIn
 
 @MainActor
 class AuthService: NSObject, ObservableObject {
@@ -60,6 +61,65 @@ class AuthService: NSObject, ObservableObject {
         let controller = ASAuthorizationController(authorizationRequests: [request])
         controller.delegate = self
         controller.performRequests()
+    }
+
+    // MARK: - Sign In with Google
+
+    func signInWithGoogle() async throws {
+        isLoading = true
+        defer { isLoading = false }
+
+        // Get root view controller
+        guard let windowScene = await UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = await windowScene.windows.first?.rootViewController else {
+            throw AuthError.googleSignInFailed
+        }
+
+        // Sign in with Google
+        let result: GIDSignInResult
+        do {
+            result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootVC)
+        } catch {
+            print("Google Sign-In error: \(error)")
+            throw AuthError.googleSignInFailed
+        }
+
+        guard let idToken = result.user.idToken?.tokenString else {
+            throw AuthError.googleSignInFailed
+        }
+
+        // Exchange with Supabase
+        let body: [String: Any] = [
+            "provider": "google",
+            "id_token": idToken
+        ]
+
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+        var request = URLRequest(url: URL(string: "\(Config.supabaseURL)/auth/v1/token?grant_type=id_token")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.httpBody = bodyData
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.googleSignInFailed
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("Google auth exchange error (\(httpResponse.statusCode)): \(responseString)")
+            }
+            throw AuthError.googleSignInFailed
+        }
+
+        print("Google auth exchange success, parsing response...")
+        let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+        print("Google auth response parsed, access token: \(authResponse.accessToken.prefix(20))...")
+        await handleAuthResponse(authResponse)
+        print("Google auth: handleAuthResponse completed, isAuthenticated = \(isAuthenticated)")
     }
 
     // MARK: - Email + Password Authentication
@@ -142,7 +202,7 @@ class AuthService: NSObject, ObservableObject {
 
         let body: [String: Any] = [
             "email": email,
-            "create_user": true  // Create user if doesn't exist
+            "create_user": true
         ]
 
         let bodyData = try JSONSerialization.data(withJSONObject: body)
@@ -193,12 +253,17 @@ class AuthService: NSObject, ObservableObject {
 
         guard (200...299).contains(httpResponse.statusCode) else {
             if let responseString = String(data: data, encoding: .utf8) {
-                print("OTP verify error: \(responseString)")
-                if responseString.contains("expired") {
+                print("OTP verify error (\(httpResponse.statusCode)): \(responseString)")
+                if responseString.contains("expired") || responseString.contains("Token has expired") {
                     throw AuthError.otpExpired
                 }
             }
             throw AuthError.invalidOTP
+        }
+
+        // Debug: print raw response
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("OTP verify success response: \(responseString.prefix(500))")
         }
 
         let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
@@ -360,6 +425,7 @@ struct AuthUser: Codable {
 
 enum AuthError: LocalizedError {
     case appleSignInFailed
+    case googleSignInFailed
     case sessionExpired
     case signUpFailed
     case signInFailed
@@ -374,6 +440,8 @@ enum AuthError: LocalizedError {
         switch self {
         case .appleSignInFailed:
             return "Sign in with Apple failed. Please try again."
+        case .googleSignInFailed:
+            return "Sign in with Google failed. Please try again."
         case .sessionExpired:
             return "Your session has expired. Please sign in again."
         case .signUpFailed:

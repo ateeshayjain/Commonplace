@@ -51,6 +51,10 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -59,6 +63,14 @@
 				<string>commonplace</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.218018331354-0skfufmloh0crdoun1up6ak96jpphpik</string>
+			</array>
+		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>218018331354-0skfufmloh0crdoun1up6ak96jpphpik.apps.googleusercontent.com</string>
 </dict>
 </plist>
