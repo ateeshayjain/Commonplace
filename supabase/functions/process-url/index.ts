@@ -3,7 +3,9 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.17.1";
+import { PDFDocument, StandardFonts, rgb, PageSizes } from "https://esm.sh/pdf-lib@1.17.1";
+import { validateURL, validateStringArray, sanitizeForPrompt, handleValidationError } from "../_shared/validation.ts";
+import { checkRateLimit } from "../_shared/rateLimiter.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -58,12 +60,13 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    // Parse request
-    const { url, categories = [] }: ProcessURLRequest = await req.json();
+    const rateLimitResponse = await checkRateLimit(supabase, user.id, 'process-url', corsHeaders);
+    if (rateLimitResponse) return rateLimitResponse;
 
-    if (!url) {
-      throw new Error('URL is required');
-    }
+    // Parse and validate request
+    const body: ProcessURLRequest = await req.json();
+    const url = validateURL(body.url);
+    const categories = body.categories ? validateStringArray(body.categories, 'categories', 10) : [];
 
     // Detect platform
     const platform = detectPlatform(url);
@@ -88,14 +91,14 @@ serve(async (req) => {
       throw insertError;
     }
 
-    // Process asynchronously
-    processContent(supabase, document.id, url, platform);
+    // Process content (must await to keep worker alive)
+    await processContent(supabase, document.id, url, platform);
 
     return new Response(
       JSON.stringify({
         id: document.id,
-        status: 'processing',
-        message: 'Document queued for processing',
+        status: 'completed',
+        message: 'Document processed successfully',
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -105,13 +108,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error:', error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      }
-    );
+    return handleValidationError(error, corsHeaders);
   }
 });
 
@@ -153,21 +150,49 @@ async function processContent(
     // Generate AI enrichment
     const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain);
 
-    // Update with AI enrichment
-    await supabase
+    // Update with AI enrichment - use separate simple updates to isolate failures
+    const updateData: Record<string, any> = {
+      processing_status: 'rendering',
+      processed_at: new Date().toISOString(),
+    };
+
+    // Only store AI fields if enrichment succeeded (not null)
+    if (aiEnrichment) {
+      if (aiEnrichment.summaryShort) updateData.ai_summary_short = aiEnrichment.summaryShort;
+      if (aiEnrichment.summaryLong) updateData.ai_summary_long = aiEnrichment.summaryLong;
+      if (aiEnrichment.keyPoints?.length) updateData.ai_key_points = aiEnrichment.keyPoints;
+      if (aiEnrichment.categories?.length) updateData.ai_categories = aiEnrichment.categories;
+      if (aiEnrichment.topics?.length) updateData.ai_topics = aiEnrichment.topics;
+      if (aiEnrichment.complexityScore) updateData.ai_complexity_score = aiEnrichment.complexityScore;
+      if (aiEnrichment.readingLevel) updateData.ai_reading_level = aiEnrichment.readingLevel;
+    } else {
+      console.warn('AI enrichment returned null - document will not have AI summaries');
+    }
+
+    const { error: aiUpdateError } = await supabase
       .from('documents')
-      .update({
-        ai_summary_short: aiEnrichment.summaryShort,
-        ai_summary_long: aiEnrichment.summaryLong,
-        ai_key_points: aiEnrichment.keyPoints,
-        ai_categories: aiEnrichment.categories,
-        ai_topics: aiEnrichment.topics,
-        ai_complexity_score: aiEnrichment.complexityScore,
-        ai_reading_level: aiEnrichment.readingLevel,
-        processing_status: 'completed',
-        processed_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', documentId);
+
+    if (aiUpdateError) console.error('AI update error:', aiUpdateError);
+
+    // Generate PDF
+    try {
+      const pdfUrl = await generatePDF(supabase, documentId);
+      await supabase
+        .from('documents')
+        .update({ pdf_url: pdfUrl, processing_status: 'completed' })
+        .eq('id', documentId);
+    } catch (pdfError: any) {
+      console.error('PDF generation failed (non-fatal):', pdfError);
+      await supabase
+        .from('documents')
+        .update({ processing_status: 'completed' })
+        .eq('id', documentId);
+      return { success: true, pdfGenerated: false, pdfError: pdfError?.message || String(pdfError) };
+    }
+
+    return { success: true, pdfGenerated: true };
 
   } catch (error) {
     console.error('Processing error:', error);
@@ -178,6 +203,7 @@ async function processContent(
         processing_error: error.message,
       })
       .eq('id', documentId);
+    return { error: error.message };
   }
 }
 
@@ -248,7 +274,6 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
 
   // Try Jina Reader API first (free tier: 1M tokens/month)
   try {
-    console.log('Trying Jina Reader API...');
     const jinaResponse = await fetch(`https://r.jina.ai/${url}`, {
       headers: {
         'Accept': 'application/json',
@@ -257,12 +282,21 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
     });
 
     if (jinaResponse.ok) {
-      const data = await jinaResponse.json();
-      console.log('Jina extraction successful');
+      const response = await jinaResponse.json();
+      const data = response.data || response;
+      // Clean up markdown content - remove images and clean formatting
+      let content = data.content || data.text || '';
+      content = content
+        .replace(/!\[.*?\]\(.*?\)/g, '') // Remove markdown images
+        .replace(/<img[^>]*>/gi, '') // Remove HTML img tags
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Keep link text, remove URL
+        .replace(/^[-*_]{3,}$/gm, '') // Remove horizontal rules
+        .replace(/\n{3,}/g, '\n\n') // Collapse multiple newlines
+        .trim();
       return {
         title: data.title || 'Untitled',
         subtitle: data.description,
-        bodyPlain: data.content || data.text || '',
+        bodyPlain: content,
         authorName: data.author,
         publishedAt: data.publishedTime,
       };
@@ -330,27 +364,14 @@ async function generateAIEnrichment(title: string, content: string) {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
-    console.log('Anthropic API key not configured, skipping AI enrichment');
-    return {
-      summaryShort: content.substring(0, 200) + '...',
-      summaryLong: content.substring(0, 500),
-      keyPoints: [],
-      categories: [],
-      topics: [],
-      complexityScore: 5,
-      readingLevel: 'intermediate',
-    };
+    console.error('ANTHROPIC_API_KEY not found in environment - AI enrichment skipped');
+    return null;
   }
 
-  try {
-    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+  console.log('Starting AI enrichment, API key exists:', !!anthropicApiKey, 'content length:', content.length);
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: `Analyze this content and provide:
+  try {
+    const prompt = `Analyze this content and provide:
 
 1. SHORT SUMMARY (2-3 sentences, focus on main insight)
 2. LONG SUMMARY (2-3 paragraphs)
@@ -360,40 +381,215 @@ async function generateAIEnrichment(title: string, content: string) {
 6. COMPLEXITY SCORE (1-10, where 1=casual, 10=expert)
 7. READING LEVEL (casual, intermediate, advanced, expert)
 
-Title: ${title}
-Content: ${content.substring(0, 10000)}
+Title: ${sanitizeForPrompt(title, 500)}
+Content: ${sanitizeForPrompt(content.substring(0, 10000))}
 
-Respond in JSON format:
-{
-  "summaryShort": "...",
-  "summaryLong": "...",
-  "keyPoints": ["...", "..."],
-  "categories": ["..."],
-  "topics": ["..."],
-  "complexityScore": 5,
-  "readingLevel": "intermediate"
-}`,
-      }],
+Respond ONLY with valid JSON, no other text:
+{"summaryShort": "...", "summaryLong": "...", "keyPoints": ["..."], "categories": ["..."], "topics": ["..."], "complexityScore": 5, "readingLevel": "intermediate"}`;
+
+    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicApiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    if (!claudeResponse.ok) {
+      const errText = await claudeResponse.text();
+      console.error('Claude API error status:', claudeResponse.status);
+      console.error('Claude API error body:', errText.substring(0, 500));
+      throw new Error(`Claude API error: ${claudeResponse.status} - ${errText.substring(0, 100)}`);
+    }
+
+    console.log('Claude API response OK, parsing...');
+
+    const claudeData = await claudeResponse.json();
+    const text = claudeData.content?.[0]?.type === 'text' ? claudeData.content[0].text : '';
+
+    if (!text) {
+      console.error('Claude returned empty text, response:', JSON.stringify(claudeData).substring(0, 500));
+      throw new Error('Empty response from Claude');
+    }
+
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        console.log('AI enrichment success:', Object.keys(parsed).join(', '));
+        return parsed;
+      } catch (parseError) {
+        console.error('Failed to parse Claude JSON:', jsonMatch[0].substring(0, 200));
+        throw parseError;
+      }
+    } else {
+      console.error('No JSON found in Claude response:', text.substring(0, 300));
+      throw new Error('No JSON in Claude response');
     }
-  } catch (e) {
-    console.error('AI enrichment failed:', e);
+  } catch (e: any) {
+    console.error('AI enrichment failed:', e.message || e);
+    // Return null to indicate AI enrichment failed - don't store raw content as "summary"
+    return null;
+  }
+}
+
+
+// PDF Generation
+async function generatePDF(supabase: any, documentId: string): Promise<string> {
+  // Fetch the fully enriched document
+  const { data: doc, error } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('id', documentId)
+    .single();
+
+  if (error || !doc) throw new Error('Document not found for PDF');
+
+  const pdfDoc = await PDFDocument.create();
+  const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const pageWidth = PageSizes.Letter[0];
+  const pageHeight = PageSizes.Letter[1];
+  const margin = 50;
+  const contentWidth = pageWidth - (margin * 2);
+  const lineHeight = 16;
+  const titleSize = 20;
+  const bodySize = 11;
+  const captionSize = 9;
+
+  let page = pdfDoc.addPage(PageSizes.Letter);
+  let yPosition = pageHeight - margin;
+
+  function ensureSpace(height: number): void {
+    if (yPosition - height < margin) {
+      page = pdfDoc.addPage(PageSizes.Letter);
+      yPosition = pageHeight - margin;
+    }
   }
 
-  // Fallback
-  return {
-    summaryShort: content.substring(0, 200) + '...',
-    summaryLong: content.substring(0, 500),
-    keyPoints: [],
-    categories: [],
-    topics: [],
-    complexityScore: 5,
-    readingLevel: 'intermediate',
-  };
+  function wrapText(text: string, font: any, size: number, maxWidth: number): string[] {
+    // Strip non-WinAnsi characters (Helvetica only supports WinAnsi encoding)
+    const cleanText = text.replace(/[\n\r\t]/g, ' ').replace(/[^\x20-\x7E\xA0-\xFF]/g, '').replace(/\s+/g, ' ').trim();
+    const words = cleanText.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const width = font.widthOfTextAtSize(testLine, size);
+      if (width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+
+  function drawWrappedText(text: string, font: any, size: number, color = rgb(0.1, 0.1, 0.1)): void {
+    const lines = wrapText(text, font, size, contentWidth);
+    for (const line of lines) {
+      ensureSpace(lineHeight);
+      page.drawText(line, { x: margin, y: yPosition, font, size, color });
+      yPosition -= lineHeight;
+    }
+  }
+
+  // Sanitize text for WinAnsi encoding
+  function safe(text: string): string {
+    return text.replace(/[^\x20-\x7E\xA0-\xFF]/g, '').trim();
+  }
+
+  // Header
+  const sourceText = safe(`${doc.source_domain || doc.source_type}`);
+  page.drawText(sourceText, { x: margin, y: yPosition, font: helvetica, size: captionSize, color: rgb(0.5, 0.5, 0.5) });
+  yPosition -= 30;
+
+  // Title
+  const titleLines = wrapText(doc.title, helveticaBold, titleSize, contentWidth);
+  for (const line of titleLines) {
+    ensureSpace(titleSize + 6);
+    page.drawText(line, { x: margin, y: yPosition, font: helveticaBold, size: titleSize, color: rgb(0.1, 0.1, 0.1) });
+    yPosition -= titleSize + 6;
+  }
+  yPosition -= 10;
+
+  // Author
+  if (doc.author_name) {
+    page.drawText(safe(`By ${doc.author_name}`), { x: margin, y: yPosition, font: helvetica, size: 10, color: rgb(0.4, 0.4, 0.4) });
+    yPosition -= 20;
+  }
+
+  // AI Summary box
+  if (doc.ai_summary_short) {
+    ensureSpace(80);
+    const summaryLines = wrapText(doc.ai_summary_short, helvetica, bodySize, contentWidth - 20);
+    const boxHeight = (summaryLines.length * lineHeight) + 40;
+    page.drawRectangle({ x: margin, y: yPosition - boxHeight + 20, width: contentWidth, height: boxHeight, color: rgb(0.95, 0.95, 0.98), borderColor: rgb(0.8, 0.8, 0.9), borderWidth: 1 });
+    yPosition -= 10;
+    page.drawText('AI Summary', { x: margin + 10, y: yPosition, font: helveticaBold, size: 10, color: rgb(0.4, 0.4, 0.6) });
+    yPosition -= 20;
+    for (const line of summaryLines) {
+      page.drawText(line, { x: margin + 10, y: yPosition, font: helvetica, size: bodySize, color: rgb(0.2, 0.2, 0.2) });
+      yPosition -= lineHeight;
+    }
+    yPosition -= 20;
+  }
+
+  // Key Points
+  if (doc.ai_key_points && doc.ai_key_points.length > 0) {
+    ensureSpace(30);
+    page.drawText('Key Points', { x: margin, y: yPosition, font: helveticaBold, size: 12, color: rgb(0.2, 0.2, 0.2) });
+    yPosition -= 20;
+    for (const point of doc.ai_key_points) {
+      const pointLines = wrapText(`• ${point}`, helvetica, bodySize, contentWidth - 15);
+      for (const pl of pointLines) {
+        ensureSpace(lineHeight);
+        page.drawText(pl, { x: margin, y: yPosition, font: helvetica, size: bodySize, color: rgb(0.2, 0.2, 0.2) });
+        yPosition -= lineHeight;
+      }
+    }
+    yPosition -= 15;
+  }
+
+  // Divider
+  ensureSpace(20);
+  page.drawLine({ start: { x: margin, y: yPosition }, end: { x: pageWidth - margin, y: yPosition }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
+  yPosition -= 20;
+
+  // Content
+  if (doc.body_plain) {
+    const paragraphs = doc.body_plain.split(/\n\n+/);
+    for (const paragraph of paragraphs) {
+      const cleanPara = paragraph.trim();
+      if (!cleanPara) continue;
+      drawWrappedText(cleanPara, helvetica, bodySize);
+      yPosition -= 10;
+    }
+  }
+
+  // Footer
+  page.drawText(`Saved with Commonplace`, { x: margin, y: 30, font: helvetica, size: 8, color: rgb(0.6, 0.6, 0.6) });
+
+  const pdfBytes = await pdfDoc.save();
+
+  // Upload to storage
+  const fileName = `${doc.user_id}/${documentId}.pdf`;
+  const { error: uploadError } = await supabase.storage
+    .from('pdfs')
+    .upload(fileName, pdfBytes, { contentType: 'application/pdf', upsert: true });
+
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage.from('pdfs').getPublicUrl(fileName);
+  return urlData.publicUrl;
 }

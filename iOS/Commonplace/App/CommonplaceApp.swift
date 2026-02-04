@@ -1,4 +1,5 @@
 import SwiftUI
+import GoogleSignIn
 
 @main
 struct CommonplaceApp: App {
@@ -8,6 +9,9 @@ struct CommonplaceApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(authService)
+                .onOpenURL { url in
+                    GIDSignIn.sharedInstance.handle(url)
+                }
         }
     }
 }
