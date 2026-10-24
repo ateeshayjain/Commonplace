@@ -168,6 +168,8 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 | Retire `ai_topics` / `user_categories` in favour of tags (migration + UI) | M |
 | Tags in the iOS UI: chips on Detail, filter in Library (`?tag=`), edit/merge | M |
 | Synthesis: accept any mix of source types; output a comparative report saved as a document | S |
+| Citations: summaries and synthesis link each claim to the source passage it came from (answers the AI-trust complaint, §8) | M |
+| Output language: Hindi and Hinglish summaries, tags and posts as a user setting (no competitor offers this, §8) | M |
 | Prompt eval set: 20–30 real saved items per source type, scored for summary quality and tag stability | M |
 
 **Exit:** structured-output failures are under 1% on the eval set, and tags dedupe across a user's library.
@@ -180,6 +182,7 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 | Dossier: `generate-dossier` job builds a multi-doc PDF with cover, table of contents with real page numbers, headers/footers, pagination; stored as a `pdf_dossier` asset | L |
 | Collections UI (create, add, reorder) as the main way to pick dossier contents | M |
 | Unicode/Devanagari font embedding in PDFs | S |
+| Full library export (Markdown + JSON, with tags and collections), reachable from Profile (Pocket/Omnivore shutdowns made this a buying criterion, §8) | S |
 
 **Exit:** a 10-document collection exports to a paginated dossier with a correct TOC, and Hindi text renders.
 
@@ -193,6 +196,7 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 | Video script: hook/body/CTA script timed to `targetDurationSec` (15–90 s) with on-screen text and visual cues | S |
 | iOS: "Create" menu on Detail and Collections; asset gallery; preview; native share sheet to Instagram, LinkedIn, X, WhatsApp; save to Photos | M |
 | Template design pass (brand, typography, safe areas per platform) | M |
+| Attribution: every generated asset credits its sources (author, link); quotes length-capped | S |
 
 **Exit:** from any saved item, the user can produce and post a carousel, a quote graphic and a video script in under a minute.
 
@@ -202,7 +206,7 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 |---|---|
 | Offline: cache summaries and pinned PDFs on device; queue captures made offline | M |
 | Public collections: share link + read-only view (needs a policy exposing documents in public collections, via a SECURITY DEFINER helper to avoid RLS recursion) | M |
-| Subscription tiers: StoreKit 2, server-side enforcement of save/generation limits, lock `subscription_tier` to service role | L |
+| Subscription tiers: StoreKit 2, server-side enforcement of save/generation limits, lock `subscription_tier` to service role. Visible usage counters, one-tap cancel, INR pricing (≈₹199–299/mo, §8) | L |
 | Rename to SangrahAI: display name, bundle id, App Group, URL scheme, repo docs | S |
 | Observability: Edge Function logs, Claude usage/cost per user, job failure alerts | S |
 | App Store: privacy labels, screenshots, review notes (scraping and social-platform terms) | M |
@@ -231,8 +235,8 @@ Phase 0 ──► Phase 1 (queue) ──► Phase 2 ──► Phase 3 ──► 
 | Decision | Options | Needed by |
 |---|---|---|
 | Queue implementation | Supabase Queues (pgmq) + pg_cron worker (recommended) / Edge Function `waitUntil` only / external worker | Phase 1 |
-| YouTube transcripts | Official captions API (own videos only) / unofficial timedtext endpoint / third-party transcript API / download audio + speech-to-text | Phase 1 |
-| Instagram capture | No public API for others' posts. Options: oEmbed caption only / user-shared media through the Share Extension / third-party scraper (terms-of-service risk) | Phase 1 |
+| YouTube transcripts | Official captions API works only for your own videos, and YouTube blocks transcript fetching from cloud IPs (so it fails from Edge Functions). Options: fetch on the user's device and upload / paid transcript API (e.g. Supadata) / audio + speech-to-text. Recommended: on-device fetch, paid API as fallback | Phase 1 |
+| Instagram capture | No public API for others' posts. Options: oEmbed caption only / user-shared media through the Share Extension / third-party scraper (terms-of-service risk). Recommended: process what the user shares, store derived notes + link rather than re-hosting media | Phase 1 |
 | OCR engine | On-device Vision (free, private, offline; recommended) / Claude vision (better on complex layouts, costs per page) | Phase 1 |
 | Speech-to-text for Reels and audio | Vendor TBD | Phase 1 |
 | Rendering host | Satori + resvg-wasm in Edge Functions / container service | Phase 4 |
@@ -251,3 +255,30 @@ Phase 0 ──► Phase 1 (queue) ──► Phase 2 ──► Phase 3 ──► 
 | Claude cost on heavy users | Per-user usage tracking, tier limits, effort tuning, prompt caching for repeated context |
 | Render quality and fonts across scripts | Bundle fonts; snapshot tests of templates in CI |
 | Untested iOS code (built without a compiler so far) | Phase 0 builds in Xcode first; CI with `xcodebuild` from then on |
+| NotebookLM or Readwise adds share-sheet capture + post generation | Compete on what they lack: social-native capture, Hindi/Indic output, cited dossiers, voice-matched posting (§8) |
+
+---
+
+## 8. Competitive landscape
+
+Full research with sources: [`docs/competitive-landscape.md`](docs/competitive-landscape.md) (October 2026; prices approximate).
+
+**Who's out there**
+
+| Category | Main tools | Typical gap |
+|---|---|---|
+| Read-later | Readwise Reader, Matter, Instapaper, GoodLinks, Raindrop, mymind (Pocket and Omnivore shut down) | Stop at reading; no repurposing; weak social capture; rising prices |
+| AI second brain | NotebookLM, Recall, Glasp, Mem, Fabric, Heptabase, Eightify, Snipd | Hidden caps; hallucination complaints; no share-sheet social capture |
+| Book capture | Readwise (paper OCR), Kindle export | Readwise is pricey for OCR alone; Kindle silently truncates highlights |
+| Repurposing | Taplio, Supergrow, aiCarousels, Canva, Typefully, Castmagic, OpusClip | Start from a blank page or a URL; no knowledge library; billing complaints |
+| Closest full-loop | Second Brain/Rescroll (claims unverified), iOS capture apps (Stashwise, Fofo), Reel savers (Sorti, Siloe) | None covers capture → synthesis → dossier → voice-matched posts |
+
+**Where SangrahAI wins**
+1. The only full loop: saved knowledge → cited synthesis → PDF dossier / carousel / post.
+2. Social-native capture (Reels, carousels, captions) plus paper-book OCR.
+3. Trust: citations, visible limits, easy cancel, full export from day one.
+4. India: Hindi/Hinglish output and INR pricing. No competitor targets this.
+
+**Biggest threats:** NotebookLM (already synthesizes and makes short videos) and Readwise Reader (has the library; adding "generate a post" is easy). Capture plus summary alone is a commodity, so the moat is synthesis quality, output formats, and India.
+
+**What changed in this plan because of it:** citations and Hindi output (Phase 2), full export (Phase 3), attribution on generated assets (Phase 4), transparent limits and INR pricing (Phase 5), and on-device YouTube transcript fetching (§6).
