@@ -13,6 +13,8 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 
 **Target Users:** Knowledge workers who save articles/threads and want AI insights.
 
+**Roadmap:** the app is being extended into SangrahAI. See [`project.md`](project.md) for the PRD mapping, current status, and the phased development plan.
+
 ## Tech Stack
 - **iOS:** Swift 5.9+, SwiftUI, iOS 17+ target
 - **Backend:** Supabase (PostgreSQL + Edge Functions + Auth)
