@@ -3,7 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.17.1";
+import { Anthropic, CLAUDE_MODELS, generateText } from '../_shared/claude.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -141,7 +141,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
@@ -182,16 +182,11 @@ async function generatePlatformPosts(
     const prompt = buildPrompt(document, platform, profile, platformConstraints);
 
     try {
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        messages: [{
-          role: 'user',
-          content: prompt,
-        }],
+      const text = await generateText(anthropic, {
+        model: CLAUDE_MODELS.standard,
+        effort: 'medium',
+        prompt,
       });
-
-      const text = response.content[0].type === 'text' ? response.content[0].text : '';
       const parsed = parsePostResponse(text, platform, platformConstraints);
 
       results.push({

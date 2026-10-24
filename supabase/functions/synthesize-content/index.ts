@@ -3,7 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.17.1";
+import { Anthropic, CLAUDE_MODELS, generateText, type ClaudeEffort } from '../_shared/claude.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -76,7 +76,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Synthesis error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
     );
   }
@@ -173,16 +173,12 @@ IMPORTANT:
 - For threads, each part should be under 280 characters and standalone compelling.`;
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      messages: [
-        { role: 'user', content: userPrompt }
-      ],
+    const text = await generateText(anthropic, {
+      model: CLAUDE_MODELS.deepReasoning,
+      effort: effortForThinkingDepth(thinkingDepth),
       system: systemPrompt,
+      prompt: userPrompt,
     });
-
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (jsonMatch) {
@@ -194,6 +190,19 @@ IMPORTANT:
   }
 
   return generateFallbackSynthesis(documents, contentTypes, platforms);
+}
+
+// Deeper synthesis gets more reasoning effort (and more latency/cost)
+function effortForThinkingDepth(depth: string): ClaudeEffort {
+  switch (depth) {
+    case 'Surface Level':
+      return 'low';
+    case 'Second Order':
+      return 'medium';
+    case 'Third Order':
+    default:
+      return 'high';
+  }
 }
 
 function buildThinkingPrompt(depth: string): string {

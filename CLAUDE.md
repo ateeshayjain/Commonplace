@@ -16,7 +16,7 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 ## Tech Stack
 - **iOS:** Swift 5.9+, SwiftUI, iOS 17+ target
 - **Backend:** Supabase (PostgreSQL + Edge Functions + Auth)
-- **AI:** Claude API (claude-sonnet-4-20250514 for summaries, synthesis, post generation, voice analysis)
+- **AI:** Claude API — Claude Opus 5.5 (`claude-opus-5-5`) for summaries, post generation, voice analysis; Claude Fable 5.1 (`claude-fable-5-1`) for multi-doc synthesis
 - **Auth:** Sign in with Apple, Magic Link (OTP)
 - **OAuth:** Twitter OAuth 2.0 (PKCE), LinkedIn OAuth 2.0
 - **PDF:** pdf-lib (server-side generation)
@@ -136,7 +136,12 @@ static let supabaseAnonKey = "YOUR_SUPABASE_ANON_KEY"
 
 ### Claude API
 - Used in Edge Functions: `process-url`, `synthesize-content`, `generate-posts`, `analyze-style`
-- Model: `claude-sonnet-4-20250514`
+- Models and SDK pin live in `supabase/functions/_shared/claude.ts` (`CLAUDE_MODELS`, `generateText`) — change them there, not per function
+  - `standard`: `claude-opus-5-5` (process-url, generate-posts, analyze-style)
+  - `deepReasoning`: `claude-fable-5-1` (synthesize-content; effort scales with `ThinkingDepth`)
+- Thinking is always on for these models: control depth with `effort`, don't send `thinking: disabled`/`budget_tokens`, `temperature`, or assistant prefill (all return 400)
+- Read text blocks by `type`, not `content[0]` (responses can start with thinking blocks)
+- Server-side refusal fallback is enabled (`fallbacks: 'default'`); `generateText` throws on `stop_reason: "refusal"`
 - Env var: `ANTHROPIC_API_KEY` in Supabase secrets
 
 ## Common Mistakes to Avoid

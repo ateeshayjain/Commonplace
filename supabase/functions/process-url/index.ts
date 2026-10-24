@@ -3,7 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.17.1";
+import { Anthropic, CLAUDE_MODELS, generateText } from '../_shared/claude.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -106,7 +106,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
@@ -175,7 +175,7 @@ async function processContent(
       .from('documents')
       .update({
         processing_status: 'failed',
-        processing_error: error.message,
+        processing_error: (error as Error).message,
       })
       .eq('id', documentId);
   }
@@ -304,7 +304,7 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
       title: title.substring(0, 200),
       subtitle: description?.substring(0, 300),
       bodyPlain: bodyText || description || 'Content could not be extracted',
-      authorName,
+      authorName: authorName ?? undefined,
     };
   } catch (e) {
     console.error('Extraction failed:', e);
@@ -345,12 +345,10 @@ async function generateAIEnrichment(title: string, content: string) {
   try {
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: `Analyze this content and provide:
+    const text = await generateText(anthropic, {
+      model: CLAUDE_MODELS.standard,
+      effort: 'low',
+      prompt: `Analyze this content and provide:
 
 1. SHORT SUMMARY (2-3 sentences, focus on main insight)
 2. LONG SUMMARY (2-3 paragraphs)
@@ -373,10 +371,8 @@ Respond in JSON format:
   "complexityScore": 5,
   "readingLevel": "intermediate"
 }`,
-      }],
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
 
     if (jsonMatch) {
