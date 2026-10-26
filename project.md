@@ -271,7 +271,7 @@ Full research with sources: [`docs/competitive-landscape.md`](docs/competitive-l
 | AI second brain | NotebookLM, Recall, Glasp, Mem, Fabric, Heptabase, Eightify, Snipd | Hidden caps; hallucination complaints; no share-sheet social capture |
 | Book capture | Readwise (paper OCR), Kindle export | Readwise is pricey for OCR alone; Kindle silently truncates highlights |
 | Repurposing | Taplio, Supergrow, aiCarousels, Canva, Typefully, Castmagic, OpusClip | Start from a blank page or a URL; no knowledge library; billing complaints |
-| Closest full-loop | Second Brain/Rescroll (claims unverified), iOS capture apps (Stashwise, Fofo), Reel savers (Sorti, Siloe) | None covers capture → synthesis → dossier → voice-matched posts |
+| Closest full-loop | resaw (new, Indian, share-anything → sorted actions), Second Brain/Rescroll (claims unverified), iOS capture apps (Stashwise, Fofo), Reel savers (Sorti, Siloe) | None covers capture → synthesis → dossier → voice-matched posts; resaw targets life admin (recipes, places), not knowledge |
 
 **Where SangrahAI wins**
 1. The only full loop: saved knowledge → cited synthesis → PDF dossier / carousel / post.

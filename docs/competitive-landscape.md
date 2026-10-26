@@ -58,6 +58,7 @@ No well-known product covers the full loop (universal capture → synthesis → 
 - **Second Brain (thesecondbrain.io), Rescroll:** swipe file plus carousels, threads, Shorts from saved sources. Marketing claims only (*unverified*) ([thesecondbrain](https://www.thesecondbrain.io/linkedin-ai), [rescroll](https://www.rescroll.ai/blog/top-10-second-brain-tools)).
 - **Stashwise, Atlas, MindMark, Fofo (iOS):** share-sheet capture with AI summaries and tags; no repurposing ([Stashwise](https://apps.apple.com/us/app/stashwise-ai-second-brain/id6766147473), [Fofo](https://apps.apple.com/us/app/id6738624828)).
 - **Reel savers (Sorti, Ordo, Siloe; SuperBrain is open source):** Reel audio transcription, screenshot OCR, auto-categorization; consumer-focused (recipes, places) ([siloe](https://siloe.app/blog/organize-saved-instagram-tiktok-posts/), [SuperBrain](https://github.com/sidinsearch/superbrain)).
+- **resaw (iOS, free, launched Oct 2026):** share anything from any app (Reels, web pages, screenshots, chats); it auto-sorts saves and turns them into actions (recipe → grocery list and cooking steps, movie reel → where to watch, café → map pin, timed reminders). Roadmap: a personal assistant that "remembers what you care about". Indian founder; marketed via WhatsApp groups and Instagram ([App Store](https://apps.apple.com/app/apple-store/id6763090945), [Instagram](https://www.instagram.com/resaw.app)). **Closest in capture and share-sheet UX**, but consumer/life-admin focused (recipes, places, shopping): no summaries for knowledge work, no synthesis, no PDF or carousel output, no posting. Too new for user reviews (*unverified*).
 - **NotebookLM:** synthesis plus audio/video output; no share-sheet social capture, no posting.
 - **Taplio / MagicPost / Chartin:** URL → carousel, but no library ([chartin](https://chartin.co/)).
 
@@ -86,7 +87,8 @@ No well-known product covers the full loop (universal capture → synthesis → 
 - **Readwise Reader:** has the library and AI chat; "generate a post" would be trivial for them.
 - **Taplio, Supergrow, Canva:** could add a saved-library feature.
 - **Platforms (Meta, OpenAI, Apple):** native save-and-summarize (speculative).
-- **Commodity capture:** indie iOS clones (Stashwise, Fofo, MindMark) show capture plus summary is easy to copy. The moat has to be synthesis quality, output formats, and India.
+- **Commodity capture:** indie iOS clones (Stashwise, Fofo, MindMark) and now resaw show capture plus sorting is easy to copy. The moat has to be synthesis quality, output formats, and India.
+- **resaw specifically:** same share-sheet-first capture and an Indian audience, but pointed at life admin rather than knowledge and creators. Overlap is on capture; it diverges on what happens next. Worth a hands-on test before Phase 1 to see how it handles Reels and screenshots.
 
 ## Platform and legal risks
 
