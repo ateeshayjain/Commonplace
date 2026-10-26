@@ -30,9 +30,19 @@ struct DocumentDetailView: View {
                 // Author & metadata
                 authorSection
 
+                // AI Hook (pull-quote)
+                if let hook = document.aiHook, !hook.isEmpty {
+                    hookSection(hook)
+                }
+
                 // AI Summary
                 if let summary = document.aiSummaryShort {
                     summarySection(summary)
+                }
+
+                // AI Tags
+                if !viewModel.tags.isEmpty {
+                    tagsSection(viewModel.tags)
                 }
 
                 // Key Points
@@ -81,6 +91,9 @@ struct DocumentDetailView: View {
         }
         .sheet(isPresented: $showingCampaign) {
             CampaignView(document: document)
+        }
+        .task {
+            await viewModel.loadTags()
         }
     }
 
@@ -160,6 +173,34 @@ struct DocumentDetailView: View {
                 }
                 .font(.cpFootnote)
                 .foregroundColor(.cpTextSecondary)
+            }
+        }
+    }
+
+    private func hookSection(_ hook: String) -> some View {
+        HStack(alignment: .top, spacing: CPSpacing.sm) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.cpTint)
+                .frame(width: 4)
+
+            Text(hook)
+                .font(.cpTitle3)
+                .italic()
+                .foregroundColor(.cpText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, CPSpacing.xxs)
+    }
+
+    private func tagsSection(_ tags: [Tag]) -> some View {
+        VStack(alignment: .leading, spacing: CPSpacing.sm) {
+            Text("Tags")
+                .sectionHeaderStyle()
+
+            FlowLayout(spacing: CPSpacing.xs) {
+                ForEach(tags) { tag in
+                    CPTagChip(name: tag.name)
+                }
             }
         }
     }

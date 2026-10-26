@@ -6,6 +6,7 @@ class LibraryViewModel: ObservableObject {
     @Published var documents: [Document] = []
     @Published var filteredDocuments: [Document] = []
     @Published var categories: [Category] = Category.systemCategories
+    @Published var tags: [Tag] = []
     @Published var isLoading = false
     @Published var error: Error?
     @Published var sortOrder: SortOrder = .newest {
@@ -54,7 +55,7 @@ class LibraryViewModel: ObservableObject {
 
     // MARK: - Loading
 
-    func loadDocuments(category: String? = nil) async {
+    func loadDocuments(category: String? = nil, tagId: UUID? = nil) async {
         isLoading = true
         error = nil
 
@@ -65,8 +66,12 @@ class LibraryViewModel: ObservableObject {
                 if let category = category {
                     documents = documents.filter { $0.userCategories.contains(category) }
                 }
+                // Demo tags mirror AI topics, so filter on the tag's name
+                if let tagId = tagId, let tag = tags.first(where: { $0.id == tagId }) {
+                    documents = documents.filter { $0.aiTopics?.contains(tag.name) == true }
+                }
             } else {
-                documents = try await documentService.fetchDocuments(category: category)
+                documents = try await documentService.fetchDocuments(category: category, tagId: tagId)
             }
 
             filteredDocuments = documents
@@ -78,8 +83,26 @@ class LibraryViewModel: ObservableObject {
         isLoading = false
     }
 
-    func refresh() async {
-        await loadDocuments()
+    func loadTags() async {
+        if isDemoMode {
+            // Demo tags get fresh ids each time, so build them once to keep a selection valid
+            if tags.isEmpty {
+                tags = documentService.demoTags(for: documentService.fetchDemoDocuments())
+            }
+            return
+        }
+
+        do {
+            tags = try await documentService.fetchAllTags()
+        } catch {
+            // The filter row simply stays hidden if tags can't be loaded
+            tags = []
+        }
+    }
+
+    func refresh(category: String? = nil, tagId: UUID? = nil) async {
+        await loadTags()
+        await loadDocuments(category: category, tagId: tagId)
     }
 
     // MARK: - Filtering & Sorting

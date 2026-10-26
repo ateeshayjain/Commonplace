@@ -5,6 +5,7 @@ import SwiftUI
 class DocumentDetailViewModel: ObservableObject {
     @Published var document: Document
     @Published var selectedCategories: Set<String>
+    @Published var tags: [Tag] = []
     @Published var isLoading = false
     @Published var error: Error?
 
@@ -13,6 +14,23 @@ class DocumentDetailViewModel: ObservableObject {
     init(document: Document) {
         self.document = document
         self.selectedCategories = Set(document.userCategories)
+    }
+
+    // MARK: - Tags
+
+    func loadTags() async {
+        // Demo mode: derive tags from the document's AI topics
+        if AuthService.shared.currentUser?.email == "demo@commonplace.app" {
+            tags = documentService.demoTags(for: [document])
+            return
+        }
+
+        do {
+            tags = try await documentService.fetchTags(for: document.id)
+        } catch {
+            // Tags are supplementary; don't surface the error over the document
+            tags = []
+        }
     }
 
     // MARK: - Actions
