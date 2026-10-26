@@ -2,7 +2,7 @@
 # https://supabase.com/docs/guides/cli/config
 
 [project]
-id = "mliivcgiyezaltfbnpzb"
+id = "gfnqjaombxxkiinxhahv"
 
 [api]
 # Port to use for the API URL.

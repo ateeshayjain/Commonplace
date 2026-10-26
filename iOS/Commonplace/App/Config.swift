@@ -3,8 +3,8 @@ import Foundation
 enum Config {
     // MARK: - Supabase Configuration
     // Replace these with your actual Supabase project credentials
-    static let supabaseURL = "https://mliivcgiyezaltfbnpzb.supabase.co"
-    static let supabaseAnonKey = "sb_publishable_YjzWV4ADSZUq8c5zb6ddMA_Ys-zxYCB"
+    static let supabaseURL = "https://gfnqjaombxxkiinxhahv.supabase.co"
+    static let supabaseAnonKey = "sb_publishable_Ktsi2cXiPlIKronDz97NOg_Esfuctal"
 
     // MARK: - App Configuration
     static let appGroupIdentifier = "group.app.commonplace"

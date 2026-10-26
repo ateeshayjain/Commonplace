@@ -1,6 +1,6 @@
 -- Migration 004: SangrahAI data model
 -- Maps the SangrahAI PRD (section 5) onto the existing schema:
---   SavedItem      -> documents (+ ai_hook, metadata, 'book_ocr' source type)
+--   SavedItem      -> documents (+ ai_hook, metadata; 'book_ocr' source type in 005)
 --   Tag            -> tags + document_tags (per-user, deduplicated by slug)
 --   Collection     -> collections + collection_documents
 --   GeneratedAsset -> generated_assets (+ private 'generated-assets' storage bucket)
@@ -8,13 +8,7 @@
 -- ============================================
 -- DOCUMENTS: PRD summary structure + ingestion metadata
 -- ============================================
-ALTER TABLE documents DROP CONSTRAINT documents_source_type_check;
-ALTER TABLE documents ADD CONSTRAINT documents_source_type_check CHECK (source_type IN (
-  'twitter', 'linkedin', 'linkedin_article', 'article', 'substack',
-  'medium', 'youtube', 'podcast', 'pdf', 'reddit', 'hackernews',
-  'instagram', 'threads', 'email', 'screenshot', 'manual', 'unknown',
-  'book_ocr'
-));
+-- (book_ocr source type is added in 005; it needs a constraint drop, which requires dashboard confirmation)
 
 -- hook: single-sentence overview (PRD: max 150 chars; enforced at generation, column allows 255)
 -- executiveSummary maps to ai_summary_long, keyTakeaways to ai_key_points

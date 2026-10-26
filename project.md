@@ -63,11 +63,11 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). SangrahAI i
 
 | Item | Status |
 |---|---|
-| Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | Created, **empty**: no migrations or functions deployed |
+| Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | **Live.** Migrations 001–004 applied (non-destructive variant: old search fn revoked not dropped; `book_ocr` deferred to 005). All 6 Edge Functions deployed 2026-10-26 |
 | Migrations 001–004 | Written; verified on local Postgres (PGlite) including RLS checks |
 | Edge Functions | Pass `deno check`; never run against live services |
 | iOS app | **Never compiled in this effort** (no Swift toolchain in the dev container) |
-| `ANTHROPIC_API_KEY` secret | Not set |
+| `ANTHROPIC_API_KEY` secret | **Not set** — must be added in the Supabase dashboard (Edge Functions → Secrets); the classifier blocks secret writes from here. Until then AI calls fall back to plain excerpts |
 | Tests / CI | None |
 
 ### Known issues and tech debt
@@ -131,9 +131,9 @@ Goal: a real user can sign up, share a URL from Safari, and see an AI summary in
 | Delete the stale `Features/Library/DocumentDetailView.swift`; build the app in Xcode and fix any compile errors | S |
 | Fix date decoding to accept fractional seconds everywhere (one shared decoder) | S |
 | Wrap `process-url` background work in `EdgeRuntime.waitUntil` (stopgap until the queue lands) | S |
-| Deploy migrations 001–004 to `commonplace`; run Supabase security and performance advisors; fix findings | S |
-| Deploy all 6 Edge Functions; set `ANTHROPIC_API_KEY` | S |
-| Point `Config.swift` and `supabase/config.toml` at the new project | S |
+| ~~Deploy migrations 001–004 to `commonplace`; run Supabase security and performance advisors; fix findings~~ ✅ done 2026-10-26 | S |
+| ~~Deploy all 6 Edge Functions~~ ✅; set `ANTHROPIC_API_KEY` (you, in dashboard) | S |
+| ~~Point `Config.swift` and `supabase/config.toml` at the new project~~ ✅ | S |
 | Configure auth: Magic Link redirect `commonplace://auth/callback`, Sign in with Apple | S |
 | End-to-end test on device: sign up → share URL → summary → search → Compose → PDF | S |
 | Test setup: Deno tests for Edge Function helpers; XCTest target for model decoding; pgTAP or a PGlite script for RLS | M |

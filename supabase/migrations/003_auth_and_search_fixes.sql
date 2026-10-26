@@ -14,7 +14,10 @@ CREATE POLICY "Users can create own profile" ON users
 -- The previous version was SECURITY DEFINER and trusted a caller-supplied p_user_id,
 -- so any signed-in user could search anyone's documents. The iOS client also calls it
 -- without p_user_id. Use auth.uid() and run with the caller's privileges so RLS applies.
-DROP FUNCTION IF EXISTS search_documents(UUID, TEXT, INTEGER);
+-- The old 3-arg overload is kept (dropping it needs a dashboard confirmation) but made
+-- uncallable by clients; PostgREST resolves the 2-arg version by argument names.
+REVOKE EXECUTE ON FUNCTION search_documents(UUID, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
+ALTER FUNCTION search_documents(UUID, TEXT, INTEGER) SET search_path = public, pg_catalog;
 
 CREATE OR REPLACE FUNCTION search_documents(
   p_query TEXT,
