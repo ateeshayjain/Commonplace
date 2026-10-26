@@ -402,7 +402,7 @@ struct CategoriesSettingsView: View {
             Section("Your Categories") {
                 ForEach(categories) { category in
                     HStack {
-                        Text(category.emoji ?? "📁")
+                        Text(category.icon ?? "📁")
                         Text(category.name)
                         Spacer()
                         if category.isSystem {
@@ -456,4 +456,61 @@ struct CategoriesSettingsView: View {
 #Preview {
     ProfileView()
         .environmentObject(AuthService.shared)
+}
+
+// MARK: - Weekly Summary
+
+struct WeeklySummaryView: View {
+    @ObservedObject var viewModel: ProfileViewModel
+
+    var body: some View {
+        List {
+            Section("This Week") {
+                StatsRow(icon: "doc.text", title: "Saved", value: "\(viewModel.documentsThisWeek)")
+                StatsRow(icon: "clock", title: "Reading Time", value: "\(viewModel.totalReadingMinutes) min")
+            }
+
+            if !viewModel.topCategories.isEmpty {
+                Section("Top Categories") {
+                    ForEach(viewModel.topCategories, id: \.self) { category in
+                        Text(category)
+                            .font(.cpBody)
+                    }
+                }
+            }
+
+            if !viewModel.topTopics.isEmpty {
+                Section("Top Topics") {
+                    ForEach(viewModel.topTopics, id: \.self) { topic in
+                        Text(topic)
+                            .font(.cpBody)
+                    }
+                }
+            }
+
+            Section("Saved This Week") {
+                if viewModel.weeklyDocuments.isEmpty {
+                    Text("Nothing saved yet this week")
+                        .font(.cpBody)
+                        .foregroundColor(.cpTextSecondary)
+                } else {
+                    ForEach(viewModel.weeklyDocuments) { document in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(document.title)
+                                .font(.cpBody)
+                                .lineLimit(2)
+                            Text("\(document.sourceType.displayName) · \(document.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.cpCaption1)
+                                .foregroundColor(.cpTextSecondary)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Weekly Summary")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await viewModel.loadStats()
+        }
+    }
 }
