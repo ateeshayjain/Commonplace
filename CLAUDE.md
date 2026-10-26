@@ -126,7 +126,7 @@ The SangrahAI PRD's Prisma schema is mapped onto Supabase SQL, not Prisma:
 - **Tag → `tags` + `document_tags`**: per-user (not global). `slug` is generated from `name` (ASCII spaces/punctuation stripped, lowercased) and unique per user, so "Design Trends" and "DesignTrends" dedupe. Don't use `[:punct:]` in slug regexes — it strips Devanagari viramas
 - **Collection → `collections` + `collection_documents`** (Swift: `DocumentCollection`, to avoid clashing with `Swift.Collection`). `is_public` exposes the collection and its item list, not document contents
 - **GeneratedAsset → `generated_assets`**: `format`, `status` (queued/processing/completed/failed), `params`, `content` (JSON shape depends on format), `storage_paths` in the private `generated-assets` bucket under `{user_id}/`. Created/updated only by Edge Functions (service role); users can read and delete
-- Shapes are kept in sync across `migrations/004_sangrah_data_model.sql`, `supabase/functions/_shared/generation.ts`, and `iOS/Commonplace/Core/Models/GeneratedAsset.swift`
+- Shapes are kept in sync across `migrations/004_sangrah_data_model.sql`, `supabase/functions/_shared/generation.ts`, and `iOS/Commonplace/Core/Models/GeneratedAsset.swift` (its content enum is `GeneratedAssetContent`; `GeneratedContent` is taken by Compose)
 - New Swift files must be added to `project.pbxproj` by hand (no synchronized folders)
 
 ## External Dependencies

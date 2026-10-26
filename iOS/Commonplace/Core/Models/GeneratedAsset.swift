@@ -11,7 +11,7 @@ struct GeneratedAsset: Identifiable, Codable, Hashable {
     let collectionId: UUID?
     let format: ExportFormat
     var status: AssetStatus
-    let content: GeneratedContent?
+    let content: GeneratedAssetContent?
     let storagePaths: [String]
     let error: String?
     let createdAt: Date
@@ -139,7 +139,7 @@ enum GenerationLimits {
 
 // MARK: - Generated Content
 
-enum GeneratedContent: Hashable {
+enum GeneratedAssetContent: Hashable {
     case dossier(DossierContent)
     case carousel(CarouselContent)
     case quoteGraphic(QuoteGraphicContent)
