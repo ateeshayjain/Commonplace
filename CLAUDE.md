@@ -153,6 +153,8 @@ static let supabaseAnonKey = "YOUR_SUPABASE_ANON_KEY"
 - Thinking is always on for these models: control depth with `effort`, don't send `thinking: disabled`/`budget_tokens`, `temperature`, or assistant prefill (all return 400)
 - Read text blocks by `type`, not `content[0]` (responses can start with thinking blocks)
 - Server-side refusal fallback is enabled (`fallbacks: 'default'`); `generateText` throws on `stop_reason: "refusal"`
+- For JSON results use `generateJSON` (structured outputs via `output_config.format`); keep schemas to types/enums/required/`additionalProperties:false` and enforce lengths and counts in code
+- Tags: `_shared/tags.ts` (`slugify` must match the SQL slug rule; `attachTags` upserts by slug and links `document_tags`)
 - Env var: `ANTHROPIC_API_KEY` in Supabase secrets
 
 ## Common Mistakes to Avoid

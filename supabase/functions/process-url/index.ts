@@ -3,7 +3,12 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Anthropic, CLAUDE_MODELS, generateText } from '../_shared/claude.ts';
+import { Anthropic, CLAUDE_MODELS, generateJSON } from '../_shared/claude.ts';
+import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
+import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT } from '../_shared/generation.ts';
+
+// Supabase Edge Runtime: keeps background work alive after the response is sent
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -88,8 +93,11 @@ serve(async (req) => {
       throw insertError;
     }
 
-    // Process asynchronously
-    processContent(supabase, document.id, url, platform);
+    // Process asynchronously; without waitUntil the runtime may kill this after responding
+    const processing = processContent(supabase, user.id, document.id, url, platform);
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(processing);
+    }
 
     return new Response(
       JSON.stringify({
@@ -118,6 +126,7 @@ serve(async (req) => {
 // Process content asynchronously
 async function processContent(
   supabase: any,
+  userId: string,
   documentId: string,
   url: string,
   platform: string
@@ -150,24 +159,28 @@ async function processContent(
       })
       .eq('id', documentId);
 
-    // Generate AI enrichment
-    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain);
+    // Generate AI enrichment, reusing the user's existing tags where they fit
+    const existingTags = await fetchRecentTagNames(supabase, userId);
+    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags);
 
-    // Update with AI enrichment
+    // Update with AI enrichment (PRD: hook / executiveSummary / keyTakeaways)
     await supabase
       .from('documents')
       .update({
+        ai_hook: aiEnrichment.hook,
         ai_summary_short: aiEnrichment.summaryShort,
-        ai_summary_long: aiEnrichment.summaryLong,
-        ai_key_points: aiEnrichment.keyPoints,
+        ai_summary_long: aiEnrichment.executiveSummary,
+        ai_key_points: aiEnrichment.keyTakeaways,
         ai_categories: aiEnrichment.categories,
-        ai_topics: aiEnrichment.topics,
+        ai_topics: aiEnrichment.tags, // kept for the current UI until tags are shown
         ai_complexity_score: aiEnrichment.complexityScore,
         ai_reading_level: aiEnrichment.readingLevel,
         processing_status: 'completed',
         processed_at: new Date().toISOString(),
       })
       .eq('id', documentId);
+
+    await attachTags(supabase, userId, documentId, aiEnrichment.tags);
 
   } catch (error) {
     console.error('Processing error:', error);
@@ -326,70 +339,95 @@ function extractFromHTML(html: string, pattern: RegExp): string | null {
 }
 
 // AI Enrichment
-async function generateAIEnrichment(title: string, content: string) {
+interface Enrichment {
+  hook: string;              // <= HOOK_MAX_CHARS, single sentence
+  summaryShort: string;      // 2-3 sentences
+  executiveSummary: string;  // markdown bullet list
+  keyTakeaways: string[];    // exactly KEY_TAKEAWAY_COUNT
+  tags: string[];            // 3-6, deduplicated downstream by slug
+  categories: string[];
+  complexityScore: number;   // 1-10
+  readingLevel: 'casual' | 'intermediate' | 'advanced' | 'expert';
+}
+
+const CATEGORIES = ['Technology', 'Business', 'Health', 'Science', 'Culture', 'Politics', 'Design', 'Personal Dev'];
+
+// Structured-output schema: types/enums/required only; lengths and counts are enforced below
+const ENRICHMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['hook', 'summaryShort', 'executiveSummary', 'keyTakeaways', 'tags', 'categories', 'complexityScore', 'readingLevel'],
+  properties: {
+    hook: { type: 'string' },
+    summaryShort: { type: 'string' },
+    executiveSummary: { type: 'string' },
+    keyTakeaways: { type: 'array', items: { type: 'string' } },
+    tags: { type: 'array', items: { type: 'string' } },
+    categories: { type: 'array', items: { type: 'string', enum: CATEGORIES } },
+    complexityScore: { type: 'integer' },
+    readingLevel: { type: 'string', enum: ['casual', 'intermediate', 'advanced', 'expert'] },
+  },
+};
+
+function fallbackEnrichment(content: string): Enrichment {
+  return {
+    hook: content.substring(0, HOOK_MAX_CHARS),
+    summaryShort: content.substring(0, 200) + '...',
+    executiveSummary: content.substring(0, 500),
+    keyTakeaways: [],
+    tags: [],
+    categories: [],
+    complexityScore: 5,
+    readingLevel: 'intermediate',
+  };
+}
+
+async function generateAIEnrichment(title: string, content: string, existingTags: string[]): Promise<Enrichment> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
     console.log('Anthropic API key not configured, skipping AI enrichment');
-    return {
-      summaryShort: content.substring(0, 200) + '...',
-      summaryLong: content.substring(0, 500),
-      keyPoints: [],
-      categories: [],
-      topics: [],
-      complexityScore: 5,
-      readingLevel: 'intermediate',
-    };
+    return fallbackEnrichment(content);
   }
 
   try {
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-    const text = await generateText(anthropic, {
+    const result = await generateJSON<Enrichment>(anthropic, {
       model: CLAUDE_MODELS.standard,
       effort: 'low',
-      prompt: `Analyze this content and provide:
-
-1. SHORT SUMMARY (2-3 sentences, focus on main insight)
-2. LONG SUMMARY (2-3 paragraphs)
-3. KEY POINTS (3-5 bullet points)
-4. CATEGORIES (choose from: Technology, Business, Health, Science, Culture, Politics, Design, Personal Dev)
-5. TOPICS (3-5 specific topics)
-6. COMPLEXITY SCORE (1-10, where 1=casual, 10=expert)
-7. READING LEVEL (casual, intermediate, advanced, expert)
+      schema: ENRICHMENT_SCHEMA,
+      prompt: `Analyze this content for a personal knowledge library.
 
 Title: ${title}
 Content: ${content.substring(0, 10000)}
 
-Respond in JSON format:
-{
-  "summaryShort": "...",
-  "summaryLong": "...",
-  "keyPoints": ["...", "..."],
-  "categories": ["..."],
-  "topics": ["..."],
-  "complexityScore": 5,
-  "readingLevel": "intermediate"
-}`,
+Produce:
+- hook: ONE sentence, max ${HOOK_MAX_CHARS} characters, the single most striking idea. No preamble.
+- summaryShort: 2-3 sentences on the main insight.
+- executiveSummary: a markdown bullet list (5-8 bullets) of the arguments, key figures and practical implications.
+- keyTakeaways: exactly ${KEY_TAKEAWAY_COUNT} actionable takeaways, each one sentence.
+- tags: 3-6 short topical tags (1-3 words each, Title Case, no # symbol). Specific over generic: "Transformer Models" not "AI".
+${existingTags.length ? `  Reuse these existing tags when they fit, spelled exactly as given: ${existingTags.join(', ')}` : ''}
+- categories: 1-2 from: ${CATEGORIES.join(', ')}.
+- complexityScore: 1 (casual) to 10 (expert).
+- readingLevel: casual, intermediate, advanced or expert.
+
+Write in the language of the content.`,
     });
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
+    return {
+      hook: result.hook.trim().substring(0, HOOK_MAX_CHARS),
+      summaryShort: result.summaryShort.trim(),
+      executiveSummary: result.executiveSummary.trim(),
+      keyTakeaways: result.keyTakeaways.slice(0, KEY_TAKEAWAY_COUNT),
+      tags: result.tags,
+      categories: result.categories.filter((c) => CATEGORIES.includes(c)),
+      complexityScore: Math.min(10, Math.max(1, Math.round(result.complexityScore))),
+      readingLevel: result.readingLevel,
+    };
   } catch (e) {
     console.error('AI enrichment failed:', e);
+    return fallbackEnrichment(content);
   }
-
-  // Fallback
-  return {
-    summaryShort: content.substring(0, 200) + '...',
-    summaryLong: content.substring(0, 500),
-    keyPoints: [],
-    categories: [],
-    topics: [],
-    complexityScore: 5,
-    readingLevel: 'intermediate',
-  };
 }

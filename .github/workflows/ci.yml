@@ -53,3 +53,7 @@ jobs:
       - name: deno check
         working-directory: supabase/functions
         run: deno check _shared/*.ts */index.ts
+
+      - name: deno test
+        working-directory: supabase/functions
+        run: deno test _shared/

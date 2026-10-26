@@ -77,9 +77,9 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). SangrahAI i
 | 1 | Share Extension has no Xcode target | `iOS/CommonplaceShareExtension/` | 0 |
 | 2 | Stale duplicate `DocumentDetailView` (not in project) | `iOS/Commonplace/Features/Library/DocumentDetailView.swift` | 0 |
 | 3 | `Config.swift` points at the old, inaccessible project `mliivcgiyezaltfbnpzb` | `iOS/Commonplace/App/Config.swift`, `supabase/config.toml` | 0 |
-| 4 | `process-url` fires background work without `EdgeRuntime.waitUntil`, so the runtime can kill it mid-processing | `supabase/functions/process-url/index.ts` | 0 |
+| 4 | ~~`process-url` fires background work without `EdgeRuntime.waitUntil`~~ fixed | `supabase/functions/process-url/index.ts` | 0 |
 | 5 | Some decoders use plain `.iso8601`, which fails on Postgres fractional-second timestamps | `SupabaseService.swift`, `APIClient.swift` | 0 |
-| 6 | AI responses parsed with `text.match(/\{[\s\S]*\}/)` instead of structured outputs | 4 AI functions | 2 |
+| 6 | AI responses parsed with `text.match(/\{[\s\S]*\}/)` instead of structured outputs | `synthesize-content`, `generate-posts`, `analyze-style` (`process-url` fixed) | 2 |
 | 7 | `users` UPDATE policy lets a user change their own `subscription_tier` | migration 001 | 5 |
 | 8 | Subscription limits enforced in UI only | — | 5 |
 | 9 | No automated tests | — | 0 onward |
@@ -130,7 +130,7 @@ Goal: a real user can sign up, share a URL from Safari, and see an AI summary in
 | Add the Share Extension target in Xcode (App Group `group.app.commonplace`, shared Keychain), register its files | S |
 | ~~Build the app in Xcode and fix any compile errors~~ ✅ (3 pre-existing bugs fixed). Still to do: delete the stale `Features/Library/DocumentDetailView.swift` | S |
 | Fix date decoding to accept fractional seconds everywhere (one shared decoder) | S |
-| Wrap `process-url` background work in `EdgeRuntime.waitUntil` (stopgap until the queue lands) | S |
+| ~~Wrap `process-url` background work in `EdgeRuntime.waitUntil`~~ ✅ | S |
 | ~~Deploy migrations 001–004 to `commonplace`; run Supabase security and performance advisors; fix findings~~ ✅ done 2026-10-26 | S |
 | ~~Deploy all 6 Edge Functions~~ ✅; set `ANTHROPIC_API_KEY` (you, in dashboard) | S |
 | ~~Point `Config.swift` and `supabase/config.toml` at the new project~~ ✅ | S |
@@ -162,9 +162,9 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 
 | Task | Size |
 |---|---|
-| Switch enrichment to Claude structured outputs (`output_config.format` with a JSON schema) and drop regex parsing; apply to all 4 AI functions | M |
-| Hierarchical summary: `hook` (≤150 chars, enforced in schema and code), executive summary (markdown bullets), exactly 3 key takeaways | S |
-| Auto-tagging: Claude proposes tags, upserted into `tags` by slug, linked via `document_tags` (`source = 'ai'`); reuse the user's existing tags in the prompt to reduce drift | M |
+| Switch enrichment to Claude structured outputs (`output_config.format` with a JSON schema) and drop regex parsing; apply to all 4 AI functions. ✅ `process-url` done (`generateJSON` in `_shared/claude.ts`); the other 3 still regex-parse | M |
+| ~~Hierarchical summary: `hook` (≤150 chars), executive summary (markdown bullets), exactly 3 key takeaways~~ ✅ 2026-10-26 (`ai_hook`, `ai_summary_long`, `ai_key_points`) | S |
+| ~~Auto-tagging: Claude proposes tags, upserted into `tags` by slug, linked via `document_tags`; reuse the user's existing tags in the prompt~~ ✅ 2026-10-26 (`_shared/tags.ts`; tags also mirrored into `ai_topics` until the UI shows tags) | M |
 | Retire `ai_topics` / `user_categories` in favour of tags (migration + UI) | M |
 | Tags in the iOS UI: chips on Detail, filter in Library (`?tag=`), edit/merge | M |
 | Synthesis: accept any mix of source types; output a comparative report saved as a document | S |
