@@ -87,7 +87,8 @@ class LibraryViewModel: ObservableObject {
         if isDemoMode {
             // Demo tags get fresh ids each time, so build them once to keep a selection valid
             if tags.isEmpty {
-                tags = documentService.demoTags(for: documentService.fetchDemoDocuments())
+                let userId = AuthService.shared.currentUser?.id ?? UUID()
+                tags = documentService.demoTags(for: documentService.fetchDemoDocuments(), userId: userId)
             }
             return
         }

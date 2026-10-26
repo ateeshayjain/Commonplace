@@ -20,8 +20,8 @@ class DocumentDetailViewModel: ObservableObject {
 
     func loadTags() async {
         // Demo mode: derive tags from the document's AI topics
-        if AuthService.shared.currentUser?.email == "demo@commonplace.app" {
-            tags = documentService.demoTags(for: [document])
+        if let user = AuthService.shared.currentUser, user.email == "demo@commonplace.app" {
+            tags = documentService.demoTags(for: [document], userId: user.id)
             return
         }
 

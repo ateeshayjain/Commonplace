@@ -241,8 +241,8 @@ class DocumentService {
 extension DocumentService {
     /// Demo-mode stand-in for `tags`: one tag per distinct AI topic across the documents.
     /// Filter demo documents by a tag with `document.aiTopics?.contains(tag.name)`.
-    func demoTags(for documents: [Document]) -> [Tag] {
-        let userId = AuthService.shared.currentUser?.id ?? UUID()
+    /// `userId` is passed in because `AuthService` is main-actor isolated and this service is not.
+    func demoTags(for documents: [Document], userId: UUID) -> [Tag] {
         let names = Set(documents.flatMap { $0.aiTopics ?? [] })
         return names
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
