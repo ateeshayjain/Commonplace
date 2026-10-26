@@ -166,7 +166,7 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 | ~~Hierarchical summary: `hook` (≤150 chars), executive summary (markdown bullets), exactly 3 key takeaways~~ ✅ 2026-10-26 (`ai_hook`, `ai_summary_long`, `ai_key_points`) | S |
 | ~~Auto-tagging: Claude proposes tags, upserted into `tags` by slug, linked via `document_tags`; reuse the user's existing tags in the prompt~~ ✅ 2026-10-26 (`_shared/tags.ts`; tags also mirrored into `ai_topics` until the UI shows tags) | M |
 | Retire `ai_topics` / `user_categories` in favour of tags (migration + UI) | M |
-| Tags in the iOS UI: chips on Detail, filter in Library (`?tag=`), edit/merge | M |
+| Tags in the iOS UI: ~~chips on Detail, filter in Library~~ ✅ 2026-10-26 (`CPTagChip`, hook pull-quote on Detail); edit/merge tags still to do | M |
 | Synthesis: accept any mix of source types; output a comparative report saved as a document | S |
 | Citations: summaries and synthesis link each claim to the source passage it came from (answers the AI-trust complaint, §8) | M |
 | Output language: Hindi and Hinglish summaries, tags and posts as a user setting (no competitor offers this, §8) | M |
