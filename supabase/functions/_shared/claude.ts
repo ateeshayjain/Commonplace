@@ -48,7 +48,11 @@ export async function generateText(
   }
 
   // Responses can start with thinking blocks, so read text blocks by type
-  return response.content
-    .flatMap((block) => (block.type === 'text' ? [block.text] : []))
-    .join('');
+  const textParts: string[] = [];
+  for (const block of response.content) {
+    if (block.type === 'text') {
+      textParts.push(block.text);
+    }
+  }
+  return textParts.join('');
 }
