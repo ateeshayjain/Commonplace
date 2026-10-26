@@ -66,7 +66,7 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). SangrahAI i
 | Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | **Live.** Migrations 001–004 applied (non-destructive variant: old search fn revoked not dropped; `book_ocr` deferred to 005). All 6 Edge Functions deployed 2026-10-26 |
 | Migrations 001–004 | Written; verified on local Postgres (PGlite) including RLS checks |
 | Edge Functions | Pass `deno check`; never run against live services |
-| iOS app | **Never compiled in this effort** (no Swift toolchain in the dev container) |
+| iOS app | **Compiles** on CI (macOS runner, iOS simulator) and locally in Xcode. Not yet run end to end |
 | `ANTHROPIC_API_KEY` secret | **Not set** — must be added in the Supabase dashboard (Edge Functions → Secrets); the classifier blocks secret writes from here. Until then AI calls fall back to plain excerpts |
 | Tests / CI | None |
 
@@ -128,7 +128,7 @@ Goal: a real user can sign up, share a URL from Safari, and see an AI summary in
 | Task | Size |
 |---|---|
 | Add the Share Extension target in Xcode (App Group `group.app.commonplace`, shared Keychain), register its files | S |
-| Delete the stale `Features/Library/DocumentDetailView.swift`; build the app in Xcode and fix any compile errors | S |
+| ~~Build the app in Xcode and fix any compile errors~~ ✅ (3 pre-existing bugs fixed). Still to do: delete the stale `Features/Library/DocumentDetailView.swift` | S |
 | Fix date decoding to accept fractional seconds everywhere (one shared decoder) | S |
 | Wrap `process-url` background work in `EdgeRuntime.waitUntil` (stopgap until the queue lands) | S |
 | ~~Deploy migrations 001–004 to `commonplace`; run Supabase security and performance advisors; fix findings~~ ✅ done 2026-10-26 | S |
@@ -137,7 +137,7 @@ Goal: a real user can sign up, share a URL from Safari, and see an AI summary in
 | Configure auth: Magic Link redirect `commonplace://auth/callback`, Sign in with Apple | S |
 | End-to-end test on device: sign up → share URL → summary → search → Compose → PDF | S |
 | Test setup: Deno tests for Edge Function helpers; XCTest target for model decoding; pgTAP or a PGlite script for RLS | M |
-| CI (GitHub Actions): `deno check` + Deno tests, migration replay on Postgres, `xcodebuild` on a macOS runner | M |
+| ~~CI (GitHub Actions): `xcodebuild` on a macOS runner + `deno check`~~ ✅ green 2026-10-26 (`.github/workflows/ci.yml`). Still to add: Deno tests, migration replay on Postgres | M |
 
 **Exit:** the end-to-end test passes on a physical iPhone, and CI is green.
 
