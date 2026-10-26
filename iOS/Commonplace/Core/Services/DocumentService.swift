@@ -11,6 +11,7 @@ class DocumentService {
 
     func fetchDocuments(
         category: String? = nil,
+        tagId: UUID? = nil,
         limit: Int = 50,
         offset: Int = 0
     ) async throws -> [Document] {
@@ -22,8 +23,17 @@ class DocumentService {
             filters["user_categories"] = "cs.[\"\(category)\"]"
         }
 
+        // Inner-join on document_tags so only documents carrying the tag come back.
+        // The embedded `document_tags` key is ignored by Document's CodingKeys.
+        var select = "*"
+        if let tagId = tagId {
+            select = "*,document_tags!inner(tag_id)"
+            filters["document_tags.tag_id"] = "eq.\(tagId.uuidString)"
+        }
+
         return try await supabase.fetch(
             from: "documents",
+            select: select,
             filters: filters,
             order: "created_at.desc",
             limit: limit
@@ -161,6 +171,33 @@ class DocumentService {
         )
     }
 
+    // MARK: - Tags
+
+    /// Row shape for `document_tags?select=tag:tags(...)`
+    private struct DocumentTagRow: Decodable {
+        let tag: Tag?   // null if RLS hides the joined tag row
+    }
+
+    /// Tags attached to one document, ordered by name
+    func fetchTags(for documentId: UUID) async throws -> [Tag] {
+        let rows: [DocumentTagRow] = try await supabase.fetch(
+            from: "document_tags",
+            select: "tag:tags(id,user_id,name,slug,created_at)",
+            filters: ["document_id": "eq.\(documentId.uuidString)"]
+        )
+        return rows
+            .compactMap { $0.tag }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// All of the signed-in user's tags (RLS scopes the table), ordered by name
+    func fetchAllTags() async throws -> [Tag] {
+        return try await supabase.fetch(
+            from: "tags",
+            order: "name.asc"
+        )
+    }
+
     // MARK: - Stats
 
     struct LibraryStats: Codable {
@@ -202,6 +239,24 @@ class DocumentService {
 // MARK: - Demo Data
 
 extension DocumentService {
+    /// Demo-mode stand-in for `tags`: one tag per distinct AI topic across the documents.
+    /// Filter demo documents by a tag with `document.aiTopics?.contains(tag.name)`.
+    func demoTags(for documents: [Document]) -> [Tag] {
+        let userId = AuthService.shared.currentUser?.id ?? UUID()
+        let names = Set(documents.flatMap { $0.aiTopics ?? [] })
+        return names
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            .map { name in
+                Tag(
+                    id: UUID(),
+                    userId: userId,
+                    name: name,
+                    slug: name.lowercased().filter { $0.isLetter || $0.isNumber },
+                    createdAt: Date()
+                )
+            }
+    }
+
     func fetchDemoDocuments() -> [Document] {
         return Document.previews + [
             Document(
