@@ -79,7 +79,7 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). SangrahAI i
 | 3 | `Config.swift` points at the old, inaccessible project `mliivcgiyezaltfbnpzb` | `iOS/Commonplace/App/Config.swift`, `supabase/config.toml` | 0 |
 | 4 | ~~`process-url` fires background work without `EdgeRuntime.waitUntil`~~ fixed | `supabase/functions/process-url/index.ts` | 0 |
 | 5 | Some decoders use plain `.iso8601`, which fails on Postgres fractional-second timestamps | `SupabaseService.swift`, `APIClient.swift` | 0 |
-| 6 | AI responses parsed with `text.match(/\{[\s\S]*\}/)` instead of structured outputs | `synthesize-content`, `generate-posts`, `analyze-style` (`process-url` fixed) | 2 |
+| 6 | ~~AI responses parsed with regex instead of structured outputs~~ fixed in all 4 functions | — | 2 |
 | 7 | `users` UPDATE policy lets a user change their own `subscription_tier` | migration 001 | 5 |
 | 8 | Subscription limits enforced in UI only | — | 5 |
 | 9 | No automated tests | — | 0 onward |
@@ -162,7 +162,7 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 
 | Task | Size |
 |---|---|
-| Switch enrichment to Claude structured outputs (`output_config.format` with a JSON schema) and drop regex parsing; apply to all 4 AI functions. ✅ `process-url` done (`generateJSON` in `_shared/claude.ts`); the other 3 still regex-parse | M |
+| ~~Switch enrichment to Claude structured outputs (`output_config.format` with a JSON schema) and drop regex parsing; apply to all 4 AI functions~~ ✅ 2026-10-26 (`generateJSON` in `_shared/claude.ts`) | M |
 | ~~Hierarchical summary: `hook` (≤150 chars), executive summary (markdown bullets), exactly 3 key takeaways~~ ✅ 2026-10-26 (`ai_hook`, `ai_summary_long`, `ai_key_points`) | S |
 | ~~Auto-tagging: Claude proposes tags, upserted into `tags` by slug, linked via `document_tags`; reuse the user's existing tags in the prompt~~ ✅ 2026-10-26 (`_shared/tags.ts`; tags also mirrored into `ai_topics` until the UI shows tags) | M |
 | Retire `ai_topics` / `user_categories` in favour of tags (migration + UI) | M |

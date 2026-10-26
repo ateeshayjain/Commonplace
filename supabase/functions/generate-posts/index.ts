@@ -3,7 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Anthropic, CLAUDE_MODELS, generateText } from '../_shared/claude.ts';
+import { Anthropic, CLAUDE_MODELS, generateJSON } from '../_shared/claude.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,6 +35,31 @@ interface GeneratedPost {
     isOptimal: boolean;
   }[];
 }
+
+interface PostVariations {
+  variations: { content: string; hashtags: string[]; angle: string }[];
+}
+
+const POSTS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['variations'],
+  properties: {
+    variations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['content', 'hashtags', 'angle'],
+        properties: {
+          content: { type: 'string' },
+          hashtags: { type: 'array', items: { type: 'string' } },
+          angle: { type: 'string' },
+        },
+      },
+    },
+  },
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -182,12 +207,13 @@ async function generatePlatformPosts(
     const prompt = buildPrompt(document, platform, profile, platformConstraints);
 
     try {
-      const text = await generateText(anthropic, {
+      const result = await generateJSON<PostVariations>(anthropic, {
         model: CLAUDE_MODELS.standard,
         effort: 'medium',
+        schema: POSTS_SCHEMA,
         prompt,
       });
-      const parsed = parsePostResponse(text, platform, platformConstraints);
+      const parsed = parsePostResponse(result, platformConstraints);
 
       results.push({
         platform,
@@ -275,26 +301,7 @@ PLATFORM CONSTRAINTS:
 - Platform style: ${constraints.style}
 ${voiceSection}
 
-OUTPUT FORMAT (respond with valid JSON only):
-{
-  "variations": [
-    {
-      "content": "Post text here (no hashtags in main text)",
-      "hashtags": ["tag1", "tag2"],
-      "angle": "key insight, question, personal take, etc."
-    },
-    {
-      "content": "Second variation...",
-      "hashtags": ["tag1", "tag2"],
-      "angle": "..."
-    },
-    {
-      "content": "Third variation...",
-      "hashtags": ["tag1", "tag2"],
-      "angle": "..."
-    }
-  ]
-}
+OUTPUT: exactly 3 variations, each with "content" (post text, no hashtags in the text), "hashtags" and "angle".
 
 IMPORTANT:
 - Each variation should take a DIFFERENT angle (insight, question, personal take, controversial opinion, etc.)
@@ -306,8 +313,7 @@ IMPORTANT:
 }
 
 function parsePostResponse(
-  text: string,
-  platform: string,
+  parsed: PostVariations,
   constraints: { maxLength: number; hashtagLimit: number }
 ): {
   content: string;
@@ -315,16 +321,10 @@ function parsePostResponse(
   characterCount: number;
   isOptimal: boolean;
 }[] {
-  try {
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
-
-    return parsed.variations.map((v: any) => {
+  const variations = parsed.variations
+    .filter((v) => v.content?.trim())
+    .slice(0, 3)
+    .map((v) => {
       const hashtags = (v.hashtags || []).slice(0, constraints.hashtagLimit);
       const content = v.content.trim();
       const characterCount = content.length;
@@ -336,15 +336,9 @@ function parsePostResponse(
         isOptimal: characterCount <= constraints.maxLength,
       };
     });
-  } catch (e) {
-    console.error('Failed to parse post response:', e);
 
-    // Return fallback
-    return [{
-      content: 'Failed to generate post',
-      hashtags: [],
-      characterCount: 0,
-      isOptimal: false,
-    }];
+  if (!variations.length) {
+    throw new Error('No post variations returned');
   }
+  return variations;
 }

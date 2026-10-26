@@ -3,7 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Anthropic, CLAUDE_MODELS, generateText, type ClaudeEffort } from '../_shared/claude.ts';
+import { Anthropic, CLAUDE_MODELS, generateJSON, type ClaudeEffort } from '../_shared/claude.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,6 +18,45 @@ interface SynthesizeRequest {
   includeHashtags: boolean;
   customPrompt?: string;
 }
+
+const STRING_LIST = { type: 'array', items: { type: 'string' } };
+
+// Shape consumed by ComposeViewModel (SynthesisResult) in the iOS app
+const SYNTHESIS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'title', 'executive_summary', 'first_order_insights', 'second_order_insights', 'third_order_insights',
+    'common_themes', 'contrasts', 'future_implications', 'actionable_advice', 'generated_content',
+  ],
+  properties: {
+    title: { type: 'string' },
+    executive_summary: { type: 'string' },
+    first_order_insights: STRING_LIST,
+    second_order_insights: STRING_LIST,
+    third_order_insights: STRING_LIST,
+    common_themes: STRING_LIST,
+    contrasts: STRING_LIST,
+    future_implications: STRING_LIST,
+    actionable_advice: STRING_LIST,
+    generated_content: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['type', 'platform', 'title', 'content', 'hashtags', 'thread_parts'],
+        properties: {
+          type: { type: 'string' },
+          platform: { type: 'string' },
+          title: { type: 'string' },
+          content: { type: 'string' },
+          hashtags: STRING_LIST,
+          thread_parts: STRING_LIST,
+        },
+      },
+    },
+  },
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -136,34 +175,12 @@ ${contentPrompt}
 
 ${customPrompt ? `\nADDITIONAL INSTRUCTIONS FROM USER:\n${customPrompt}\n` : ''}
 
-Respond with this exact JSON structure:
-{
-  "title": "Compelling title that captures the synthesis",
-  "executive_summary": "2-3 sentence executive summary of the key insight",
-  "first_order_insights": ["Direct insight 1", "Direct insight 2", "Direct insight 3"],
-  "second_order_insights": ["Pattern/connection 1", "Pattern/connection 2", "Pattern/connection 3"],
-  "third_order_insights": ["Future implication 1", "Contrarian take 1", "Non-obvious insight 1"],
-  "common_themes": ["Theme 1", "Theme 2", "Theme 3"],
-  "contrasts": ["Tension or disagreement between articles"],
-  "future_implications": ["What this means for the next 1-5 years"],
-  "actionable_advice": ["Specific action reader can take based on this synthesis"],
-  "generated_content": [
-    {
-      "type": "Social Post",
-      "platform": "twitter",
-      "title": "",
-      "content": "The actual post content under 280 chars",
-      "hashtags": ["relevant", "hashtags"]
-    },
-    {
-      "type": "Twitter Thread",
-      "platform": "twitter",
-      "title": "Thread title",
-      "content": "",
-      "thread_parts": ["1/ First tweet of thread", "2/ Second tweet", "3/ Third tweet with conclusion"]
-    }
-  ]
-}
+OUTPUT FIELDS:
+- title: compelling title that captures the synthesis
+- executive_summary: 2-3 sentences on the key insight
+- first_order_insights / second_order_insights / third_order_insights: 3 each
+- common_themes (3), contrasts, future_implications (next 1-5 years), actionable_advice (specific actions)
+- generated_content: one item per requested content type and platform, with "type" (e.g. "Social Post", "Twitter Thread", "Newsletter", "Long-form Article", "Executive Summary"), "platform", "title", "content" (the post or article text; empty string for threads), "hashtags" (empty array when not requested) and "thread_parts" (one string per tweet for threads, otherwise an empty array).
 
 IMPORTANT:
 - Be SPECIFIC, not generic. Reference actual content from the articles.
@@ -173,18 +190,13 @@ IMPORTANT:
 - For threads, each part should be under 280 characters and standalone compelling.`;
 
   try {
-    const text = await generateText(anthropic, {
+    return await generateJSON<Record<string, unknown>>(anthropic, {
       model: CLAUDE_MODELS.deepReasoning,
       effort: effortForThinkingDepth(thinkingDepth),
+      schema: SYNTHESIS_SCHEMA,
       system: systemPrompt,
       prompt: userPrompt,
     });
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return parsed;
-    }
   } catch (e) {
     console.error('Claude synthesis failed:', e);
   }
