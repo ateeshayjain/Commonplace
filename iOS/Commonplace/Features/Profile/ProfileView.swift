@@ -439,8 +439,10 @@ struct CategoriesSettingsView: View {
                 if !newCategoryName.isEmpty {
                     let newCategory = Category(
                         id: UUID(),
+                        userId: AuthService.shared.currentUser?.id,
                         name: newCategoryName,
-                        emoji: "📁",
+                        slug: newCategoryName.lowercased().replacingOccurrences(of: " ", with: "-"),
+                        icon: "📁",
                         color: "#007AFF",
                         isSystem: false,
                         sortOrder: categories.count
