@@ -42,6 +42,15 @@ double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
 enable_confirmations = false
 
+[auth.external.apple]
+# Native Sign in with Apple: the iOS app posts Apple's id_token to
+# /auth/v1/token?grant_type=id_token, so the bundle id is the only client id
+# needed. A Services ID and secret key are only required for web OAuth.
+# Mirror this in the dashboard: Authentication -> Sign In / Providers -> Apple.
+enabled = true
+client_id = "app.commonplace.ios"
+secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"
+
 [functions.process-url]
 # Verify JWT tokens for authentication
 verify_jwt = true

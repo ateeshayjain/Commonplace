@@ -53,13 +53,48 @@ class AuthService: NSObject, ObservableObject {
 
     // MARK: - Sign In with Apple
 
-    func signInWithApple() {
-        let request = ASAuthorizationAppleIDProvider().createRequest()
-        request.requestedScopes = [.email, .fullName]
+    /// Exchanges the credential from `SignInWithAppleButton` (or an
+    /// `ASAuthorizationController`) for a Supabase session.
+    nonisolated func handleAppleAuthorization(_ authorization: ASAuthorization) {
+        guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
+              let identityToken = appleIDCredential.identityToken,
+              let tokenString = String(data: identityToken, encoding: .utf8) else {
+            Task { @MainActor in self.error = AuthError.appleSignInFailed }
+            return
+        }
 
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        controller.delegate = self
-        controller.performRequests()
+        Task { @MainActor in
+            isLoading = true
+            defer { isLoading = false }
+
+            do {
+                // Exchange Apple token for Supabase session
+                let body: [String: Any] = [
+                    "provider": "apple",
+                    "id_token": tokenString
+                ]
+
+                let bodyData = try JSONSerialization.data(withJSONObject: body)
+
+                var request = URLRequest(url: URL(string: "\(Config.supabaseURL)/auth/v1/token?grant_type=id_token")!)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+                request.httpBody = bodyData
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else {
+                    throw AuthError.appleSignInFailed
+                }
+
+                let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
+                await handleAuthResponse(authResponse)
+            } catch {
+                self.error = error
+            }
+        }
     }
 
     // MARK: - Email + Password Authentication
@@ -233,44 +268,7 @@ extension AuthService: ASAuthorizationControllerDelegate {
         controller: ASAuthorizationController,
         didCompleteWithAuthorization authorization: ASAuthorization
     ) {
-        guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
-              let identityToken = appleIDCredential.identityToken,
-              let tokenString = String(data: identityToken, encoding: .utf8) else {
-            return
-        }
-
-        Task { @MainActor in
-            isLoading = true
-            defer { isLoading = false }
-
-            do {
-                // Exchange Apple token for Supabase session
-                let body: [String: Any] = [
-                    "provider": "apple",
-                    "id_token": tokenString
-                ]
-
-                let bodyData = try JSONSerialization.data(withJSONObject: body)
-
-                var request = URLRequest(url: URL(string: "\(Config.supabaseURL)/auth/v1/token?grant_type=id_token")!)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
-                request.httpBody = bodyData
-
-                let (data, response) = try await URLSession.shared.data(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse,
-                      (200...299).contains(httpResponse.statusCode) else {
-                    throw AuthError.appleSignInFailed
-                }
-
-                let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
-                await handleAuthResponse(authResponse)
-            } catch {
-                self.error = error
-            }
-        }
+        handleAppleAuthorization(authorization)
     }
 
     nonisolated func authorizationController(

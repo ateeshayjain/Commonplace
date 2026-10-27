@@ -41,10 +41,12 @@ struct AuthView: View {
                     request.requestedScopes = [.email, .fullName]
                 } onCompletion: { result in
                     switch result {
-                    case .success:
-                        authService.signInWithApple()
+                    case .success(let authorization):
+                        authService.handleAppleAuthorization(authorization)
                     case .failure(let error):
-                        print("Apple Sign In failed: \(error)")
+                        // The user dismissing the sheet is not an error worth an alert.
+                        if (error as? ASAuthorizationError)?.code == .canceled { return }
+                        authService.error = error
                     }
                 }
                 .signInWithAppleButtonStyle(.black)
