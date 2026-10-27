@@ -27,9 +27,16 @@ extension Color {
     /// Separator/divider color
     static let cpSeparator = Color(uiColor: .separator)
 
-    /// Primary tint/accent color
-    static let cpTint = Color.blue
-    static let cpAccent = Color.blue
+    /// Primary tint/accent color: the ribbon red from the app icon
+    /// (#C0402A light / #D9573F dark, defined in Assets.xcassets/AccentColor)
+    static let cpTint = Color("AccentColor")
+    static let cpAccent = Color("AccentColor")
+
+    /// Brand palette from the app icon. Use for marketing surfaces and the
+    /// sign-in screen only; everyday UI stays on semantic tokens.
+    static let cpBrandNavy = Color(hex: "#1C2140")
+    static let cpBrandCream = Color(hex: "#F4EDE0")
+    static let cpBrandRibbon = Color(hex: "#C0402A")
 
     // MARK: - Source Type Colors
 

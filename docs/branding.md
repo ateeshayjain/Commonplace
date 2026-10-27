@@ -1,6 +1,6 @@
 # Branding and Design Guidelines
 
-Status: **v0, October 2026.** Product name: **Sangrah** (see §4). The app uses Apple's native iOS design language with no custom brand yet. This document records what is in the code today, the rules that keep it consistent, and the decisions still open. A visual preview of these screens and tokens lives on the [UI Preview canvas](https://claude.ai/artifact/DbFSThgxohbSVEuxSmCGuk) (private; share from its menu).
+Status: **v1, 27 October 2026.** Product name **Sangrah**, app icon and accent colour decided (see §4). The app uses Apple's native iOS design language with one brand accent. This document records what is in the code today, the rules that keep it consistent, and the decisions still open. A visual preview of these screens and tokens lives on the [UI Preview canvas](https://claude.ai/artifact/DbFSThgxohbSVEuxSmCGuk) (private; share from its menu).
 
 ## 1. Design principles
 
@@ -18,7 +18,8 @@ Source files: `iOS/Commonplace/DesignSystem/Colors.swift`, `Typography.swift`, `
 
 | Token | Value | Use |
 |---|---|---|
-| `cpTint` / `cpAccent` | `Color.blue` (#007AFF light / #0A84FF dark) | Buttons, links, selected chips, tab highlight, progress |
+| `cpTint` / `cpAccent` | Ribbon red, `AccentColor` asset (#C0402A light / #D9573F dark) | Buttons, links, selected chips, tab highlight, progress |
+| `cpBrandNavy` / `cpBrandCream` / `cpBrandRibbon` | #1C2140 / #F4EDE0 / #C0402A | Icon palette; marketing and sign-in surfaces only |
 | `cpBackground` | `systemBackground` | Screen background |
 | `cpBackgroundSecondary` | `secondarySystemBackground` (#F2F2F7) | Cards, summary box, search field |
 | `cpText` | `label` | Primary text |
@@ -79,10 +80,10 @@ SF Symbols only (`Image(systemName:)`). Source types use their platform glyph or
 
 | Decision | Current state | Where it changes |
 |---|---|---|
-| **App icon** | None. `Resources/Assets.xcassets/AppIcon.appiconset/` has no image; the home screen shows a blank placeholder | Drop a 1024 × 1024 PNG into that asset set |
-| **Accent colour** | Apple system blue | `Colors.swift` → `cpTint` and `cpAccent`; `Assets.xcassets/AccentColor.colorset` (same value, used by system controls) |
+| **App icon** | **Decided 27 Oct 2026.** Three stacked cards (navy tints behind a cream card) with a clay-red ribbon hanging from the top edge: "a collection, saved". 1024 × 1024 PNG at `Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png` | Replace that PNG; keep the flat, outline-free style. A monochrome outline version of the same mark is for in-app use (sign-in, Share Extension), not the icon |
+| **Accent colour** | **Decided 27 Oct 2026.** The icon's ribbon red: #C0402A light, #D9573F dark (both ≥ 4.5:1 on their backgrounds). `cpTint`/`cpAccent` read the `AccentColor` asset so system controls match | `Assets.xcassets/AccentColor.colorset`; `Colors.swift` brand constants |
 | **Name** | **Decided 27 Oct 2026: "Sangrah"** (संग्रह, "collection"). Chosen over "Bookmark" (generic, untrademarkable, crowded) and "Commonplace" (three small apps already use it in this category). Display name and sign-in title are "Sangrah"; "bookmark" and "commonplace book" stay as App Store subtitle/keywords. Code identifiers (bundle id `app.commonplace.ios`, App Group `group.app.commonplace`, URL scheme `commonplace://`, repo name) are unchanged until App Store submission | `Info.plist`, `AuthView.swift` done; ids in `project.pbxproj` and the Share Extension later |
-| **Mark** | None; sign-in screen uses the SF Symbol `books.vertical.fill`. Direction agreed: a bookmark glyph with an owned twist (stacked marks for "collection", or a Devanagari-style notch) | `AuthView.swift`, app icon asset |
+| **Mark** | Icon decided (above). Sign-in screen still uses the SF Symbol `books.vertical.fill`; replace with the outline mark as an SVG/PDF asset | `AuthView.swift`, new image asset |
 | **Hindi in the mark** | Not present | Part of the icon/wordmark brief |
 | **Custom typeface** | None (recommended: keep SF Pro) | `Typography.swift` if ever changed; must support Devanagari |
 | **Source logos** | Emoji in `SourceType.icon` | Replace with an asset per source |
@@ -96,5 +97,4 @@ To commission icon and accent options, answer these:
 1. Three adjectives for how Sangrah should feel.
 2. Two apps or brands whose look you admire, and one you want to avoid.
 3. Should the Devanagari word संग्रह appear in the mark, the wordmark, or neither?
-4. Light-mode accent preference: cool (blue/teal), warm (orange/clay), or neutral (ink/graphite)?
-5. Any colour that must not be used.
+4. Any colour that must not be used.
