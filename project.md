@@ -67,7 +67,7 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (th
 | Migrations 001–004 | Written; verified on local Postgres (PGlite) including RLS checks |
 | Edge Functions | Pass `deno check`; never run against live services |
 | iOS app | **Compiles** on CI (macOS runner, iOS simulator) and locally in Xcode. Not yet run end to end |
-| `ANTHROPIC_API_KEY` secret | **Not set** — must be added in the Supabase dashboard (Edge Functions → Secrets); the classifier blocks secret writes from here. Until then AI calls fall back to plain excerpts |
+| `ANTHROPIC_API_KEY` secret | **Set** in the Supabase dashboard on 2026-10-27. First real enrichment still to be confirmed from the phone |
 | Tests / CI | None |
 
 ### Known issues and tech debt
