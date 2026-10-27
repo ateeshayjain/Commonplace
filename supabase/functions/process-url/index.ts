@@ -35,6 +35,8 @@ interface ExtractedContent {
   };
   isThread?: boolean;
   threadParts?: string[];
+  // Source-specific extras stored in documents.metadata (shape: DocumentMetadata in iOS)
+  metadata?: Record<string, unknown>;
 }
 
 serve(async (req) => {
@@ -153,6 +155,7 @@ async function processContent(
         original_published_at: content.publishedAt,
         engagement: content.engagement,
         is_thread: content.isThread || false,
+        metadata: content.metadata ?? {},
         processing_status: 'enriching',
         word_count: content.bodyPlain.split(/\s+/).length,
         reading_time_minutes: Math.ceil(content.bodyPlain.split(/\s+/).length / 200),
@@ -279,6 +282,97 @@ async function extractTweetViaFxTwitter(tweetId: string): Promise<ExtractedConte
   }
 }
 
+function extractYouTubeVideoId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1).split('/')[0] || null;
+    const v = parsed.searchParams.get('v');
+    if (v) return v;
+    const shorts = parsed.pathname.match(/\/(?:shorts|embed|live)\/([A-Za-z0-9_-]{6,})/);
+    return shorts ? shorts[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+// YouTube: the watch page is a shell for a reader, so Jina returns navigation
+// chrome. Read the public oEmbed endpoint (title, channel, thumbnail) and the
+// player JSON embedded in the page (description, keywords, length, views,
+// publish date, chapters). The description is what gets summarized.
+async function extractYouTube(url: string): Promise<ExtractedContent | null> {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) return null;
+  const canonical = `https://www.youtube.com/watch?v=${videoId}`;
+
+  let title = '';
+  let channelName: string | undefined;
+  let thumbnailUrl: string | undefined;
+  try {
+    const oembed = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonical)}&format=json`);
+    if (oembed.ok) {
+      const data = await oembed.json();
+      title = (data.title as string | undefined) ?? '';
+      channelName = data.author_name as string | undefined;
+      thumbnailUrl = data.thumbnail_url as string | undefined;
+    }
+  } catch (e) {
+    console.log('YouTube oEmbed failed:', e);
+  }
+
+  let description = '';
+  let keywords: string[] = [];
+  const metadata: Record<string, unknown> = {};
+  try {
+    const page = await fetch(canonical, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+        'Accept-Language': 'en',
+      },
+    });
+    const html = await page.text();
+    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.*?\})\s*;\s*(?:var |<\/script>)/s);
+    if (match) {
+      const player = JSON.parse(match[1]);
+      const details = player.videoDetails ?? {};
+      title = title || (details.title as string | undefined) || '';
+      channelName = channelName ?? (details.author as string | undefined);
+      description = ((details.shortDescription as string | undefined) ?? '').trim();
+      keywords = (details.keywords as string[] | undefined) ?? [];
+      if (details.lengthSeconds) metadata.durationSec = Number(details.lengthSeconds);
+      if (details.viewCount) metadata.viewCount = Number(details.viewCount);
+      const publishDate = player.microformat?.playerMicroformatRenderer?.publishDate as string | undefined;
+      if (publishDate) metadata.uploadDate = publishDate;
+    }
+    const chapters: { startSec: number; title: string }[] = [];
+    const chapterPattern = /"macroMarkersListItemRenderer":\{"title":\{"simpleText":"([^"]+)"\},"timeDescription":\{"simpleText":"([^"]+)"\}/g;
+    for (const m of html.matchAll(chapterPattern)) {
+      const parts = m[2].split(':').map(Number);
+      const startSec = parts.reduce((acc, part) => acc * 60 + part, 0);
+      if (!chapters.some((c) => c.startSec === startSec)) chapters.push({ startSec, title: m[1] });
+    }
+    if (chapters.length) metadata.chapters = chapters;
+  } catch (e) {
+    console.log('YouTube page fetch failed:', e);
+  }
+
+  if (!title) return null;
+  if (channelName) metadata.channelName = channelName;
+  if (thumbnailUrl) metadata.thumbnailUrl = thumbnailUrl;
+
+  const bodyParts = [description];
+  if (keywords.length) bodyParts.push(`Keywords: ${keywords.join(', ')}`);
+  const bodyPlain = bodyParts.filter((part) => part.length > 0).join('\n\n') || title;
+
+  return {
+    title,
+    bodyPlain,
+    authorName: channelName,
+    publishedAt: metadata.uploadDate as string | undefined,
+    engagement: metadata.viewCount ? { views: metadata.viewCount as number } : undefined,
+    metadata,
+  };
+}
+
 // Content extraction - Uses Jina Reader API for high-quality extraction
 async function extractContent(url: string, platform: string): Promise<ExtractedContent> {
   // For X / Twitter: fxtwitter first (expanded links, long posts, and X
@@ -315,6 +409,11 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
     }
   }
 
+  if (platform === 'youtube') {
+    const video = await extractYouTube(url);
+    if (video) return video;
+  }
+
   // Try Jina Reader API first (free tier: 1M tokens/month)
   try {
     console.log('Trying Jina Reader API...');
@@ -326,15 +425,22 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
     });
 
     if (jinaResponse.ok) {
-      const data = await jinaResponse.json();
-      console.log('Jina extraction successful');
-      return {
-        title: data.title || 'Untitled',
-        subtitle: data.description,
-        bodyPlain: data.content || data.text || '',
-        authorName: data.author,
-        publishedAt: data.publishedTime,
-      };
+      const envelope = await jinaResponse.json();
+      // With Accept: application/json, Jina wraps the page in { code, status, data: {...} }.
+      // Reading the fields off the envelope produced "Untitled" with an empty body.
+      const page = envelope?.data && typeof envelope.data === 'object' ? envelope.data : envelope;
+      const body: string = page.content || page.text || '';
+      if (body.trim().length > 0) {
+        console.log('Jina extraction successful');
+        return {
+          title: page.title || 'Untitled',
+          subtitle: page.description,
+          bodyPlain: body,
+          authorName: page.author,
+          publishedAt: page.publishedTime,
+        };
+      }
+      console.log('Jina returned no body text, falling back to HTML parsing');
     }
   } catch (e) {
     console.log('Jina extraction failed, falling back to HTML parsing:', e);

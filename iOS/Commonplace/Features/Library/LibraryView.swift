@@ -64,6 +64,12 @@ struct LibraryView: View {
                     }
                 }
             }
+            // Declared here, outside the lazy stacks: a navigationDestination
+            // inside a LazyVStack is only registered once that row renders, so
+            // taps silently did nothing.
+            .navigationDestination(for: Document.self) { document in
+                DocumentDetailView(document: document)
+            }
             .navigationTitle("Library")
             .refreshable {
                 await viewModel.refresh(category: selectedCategory, tagId: selectedTagId)
@@ -256,9 +262,6 @@ struct LibraryView: View {
                     sectionHeader(group.title)
                 }
             }
-        }
-        .navigationDestination(for: Document.self) { document in
-            DocumentDetailView(document: document)
         }
     }
 
