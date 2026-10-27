@@ -207,7 +207,7 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 | Offline: cache summaries and pinned PDFs on device; queue captures made offline | M |
 | Public collections: share link + read-only view (needs a policy exposing documents in public collections, via a SECURITY DEFINER helper to avoid RLS recursion) | M |
 | Subscription tiers: StoreKit 2, server-side enforcement of save/generation limits, lock `subscription_tier` to service role. Visible usage counters, one-tap cancel, INR pricing (≈₹199–299/mo, §8) | L |
-| Rename to SangrahAI: display name, bundle id, App Group, URL scheme, repo docs | S |
+| Rename to SangrahAI: display name, bundle id, App Group, URL scheme, repo docs. Brand decisions (icon, accent, mark) per [`docs/branding.md`](docs/branding.md) §4 | S |
 | Observability: Edge Function logs, Claude usage/cost per user, job failure alerts | S |
 | App Store: privacy labels, screenshots, review notes (scraping and social-platform terms) | M |
 

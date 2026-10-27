@@ -15,6 +15,8 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 
 **Roadmap:** the app is being extended into SangrahAI. See [`project.md`](project.md) for the PRD mapping, current status, and the phased development plan.
 
+**Branding and design rules:** [`docs/branding.md`](docs/branding.md). Use design-system tokens (`cp*` colours, `cp*` fonts, `CPSpacing`), never literals; no custom brand exists yet (open decisions listed there).
+
 ## Tech Stack
 - **iOS:** Swift 5.9+, SwiftUI, iOS 17+ target
 - **Backend:** Supabase (PostgreSQL + Edge Functions + Auth)
