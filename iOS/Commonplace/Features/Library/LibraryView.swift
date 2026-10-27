@@ -6,6 +6,7 @@ struct LibraryView: View {
     @State private var selectedTagId: UUID? = nil
     @State private var searchText = ""
     @State private var showingAddURL = false
+    @State private var showingHowToSave = false
     @State private var urlToAdd = ""
     @State private var isAddingURL = false
 
@@ -150,6 +151,12 @@ struct LibraryView: View {
                         }
                     }
                 )
+            }
+            .sheet(isPresented: $showingHowToSave) {
+                HowToSaveSheet {
+                    showingHowToSave = false
+                    showingAddURL = true
+                }
             }
             .sheet(isPresented: $showingCompose) {
                 ComposeView(
@@ -325,7 +332,7 @@ struct LibraryView: View {
                 : "Try a different search term",
             actionTitle: searchText.isEmpty ? "Learn How to Save" : nil
         ) {
-            // Show tutorial
+            showingHowToSave = true
         }
     }
 
@@ -420,6 +427,81 @@ struct AddURLSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - How To Save Sheet
+
+/// Explains the ways to get content into the library. `onAddLink` dismisses
+/// this sheet and opens the Add URL sheet.
+struct HowToSaveSheet: View {
+    let onAddLink: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Step {
+        let icon: String
+        let title: String
+        let detail: String
+    }
+
+    private let steps = [
+        Step(
+            icon: "plus.circle.fill",
+            title: "Paste a link",
+            detail: "Tap + in the Library, paste the URL of an article, thread, or post, and tap Add. Sangrah fetches it and writes the summary."
+        ),
+        Step(
+            icon: "square.and.arrow.up",
+            title: "Share from any app",
+            detail: "From Safari, X, LinkedIn, or YouTube, tap Share and pick Sangrah. Coming in a later build."
+        ),
+        Step(
+            icon: "sparkles",
+            title: "Read the summary",
+            detail: "Each save gets a one-line hook, key points, and tags, so you can find it again by what it was about."
+        )
+    ]
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: CPSpacing.lg) {
+                ForEach(steps.indices, id: \.self) { index in
+                    HStack(alignment: .top, spacing: CPSpacing.md) {
+                        Image(systemName: steps[index].icon)
+                            .font(.title2)
+                            .foregroundColor(.cpTint)
+                            .frame(width: 32)
+                        VStack(alignment: .leading, spacing: CPSpacing.xs) {
+                            Text(steps[index].title)
+                                .font(.cpHeadline)
+                            Text(steps[index].detail)
+                                .font(.cpBody)
+                                .foregroundColor(.cpTextSecondary)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                Button(action: onAddLink) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add a Link Now")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .padding(CPSpacing.screenHorizontal)
+            .navigationTitle("How to Save")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
