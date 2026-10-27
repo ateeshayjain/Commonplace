@@ -22,8 +22,9 @@ enum SharedAuthStore {
         SecItemDelete(baseQuery as CFDictionary)
         var attributes = baseQuery
         attributes[kSecValueData as String] = data
-        // Readable after first unlock so a share from the lock screen works
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        // Share extensions only run while the device is unlocked, so use the
+        // strictest class that still works; never migrates to another device.
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let status = SecItemAdd(attributes as CFDictionary, nil)
         if status != errSecSuccess {
             print("SharedAuthStore: save failed (\(status))")
