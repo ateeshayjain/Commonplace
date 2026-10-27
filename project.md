@@ -267,7 +267,7 @@ Full research with sources: [`docs/competitive-landscape.md`](docs/competitive-l
 
 | Category | Main tools | Typical gap |
 |---|---|---|
-| Read-later | Readwise Reader, Matter, Instapaper, GoodLinks, Raindrop, mymind (Pocket and Omnivore shut down) | Stop at reading; no repurposing; weak social capture; rising prices |
+| Read-later | Instapaper, Flyleaf, Readwise Reader, Matter, GoodLinks, Raindrop, mymind (Pocket and Omnivore shut down) | Stop at reading; no repurposing; weak social capture; rising prices. Reviewers' baseline: one-tap save, offline, typography, tags/folders, cross-platform (see landscape doc) |
 | AI second brain | NotebookLM, Recall, Glasp, Mem, Fabric, Heptabase, Eightify, Snipd | Hidden caps; hallucination complaints; no share-sheet social capture |
 | Book capture | Readwise (paper OCR), Kindle export | Readwise is pricey for OCR alone; Kindle silently truncates highlights |
 | Repurposing | Taplio, Supergrow, aiCarousels, Canva, Typefully, Castmagic, OpusClip | Start from a blank page or a URL; no knowledge library; billing complaints |

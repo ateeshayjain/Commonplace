@@ -10,7 +10,8 @@ Desk research from public sources: vendor pages, reviews, Reddit/HN, App Store, 
 | **Omnivore** | Free open-source read-later | Dead (late 2024) | — | Acquired by ElevenLabs; servers shut down on ~2 weeks' notice, unexported data lost ([yaps.ai](https://www.yaps.ai/ru/blog/omnivore-alternative)) |
 | **Readwise Reader** | Articles, RSS, PDF, YouTube/podcast transcripts; Ghostreader AI | ~$10/mo (Lite ~$6); 50% off for India/Brazil on request | iOS, Android, web | Seen as expensive ([Toolradar](https://toolradar.com/tools/readwise/pricing)); "busy and confusing" UX ([curtismchale](https://curtismchale.ca/?p=27945)); no auto-tagging or feed filtering ([AlternativeTo](https://alternativeto.net/software/readwise-reader/about)); bring-your-own-key for some AI ([BibiGPT](https://bibigpt.co/blog/posts/readwise-lookup-gpt55-mcp-bibigpt/)); no social capture or repurposing |
 | **Matter** | Polished reader, TTS, AI co-reader | Free; Premium ~$60–80/yr | Apple only | Moved from mostly free to paywall-heavy; no Android ([makerstack](https://makerstack.co/reviews/matter-review/), [readless](https://www.readless.app/blog/matter-app-pricing-2026)) |
-| **Instapaper** | Classic read-later | $5.99/mo, $59.99/yr | iOS, Android, web | Price doubled since 2023; no AI, newsletter or RSS features ([readless](https://www.readless.app/blog/instapaper-alternatives-2026)) |
+| **Instapaper** | Classic read-later; Zapier's 2026 pick "for most people" after Pocket's shutdown | Free; $5.99/mo Premium | iOS, Android, web, Kindle | Price doubled since 2023; no search on free; Premium adds AI text-to-speech and PDF reformatting ([Zapier, Jul 2026](https://zapier.com/blog/best-read-it-later-apps/), [readless](https://www.readless.app/blog/instapaper-alternatives-2026)) |
+| **Flyleaf** | Native Apple read-later; share-sheet capture, iCloud sync (no account), paginated columns, Shortcuts/Siri; Zapier's 2026 pick for Apple users | Free; $2/mo Premium | iOS, macOS only | Apple only; no AI, no social capture; indie developer ([Zapier, Jul 2026](https://zapier.com/blog/best-read-it-later-apps/)). **Closest UX benchmark for our share-sheet flow** |
 | **Raindrop.io** | Bookmark manager + "Stella" AI | Free; Pro ~$3/mo | All | A bookmarker, not a reader; shallow AI (*unverified*) ([contextbolt](https://contextbolt.com/blog/raindrop-pricing/)) |
 | **GoodLinks** | Native Apple read-later | One-time $5–10 | Apple only | No AI; weak automation; offline-save reliability concerns ([marlvel](https://marlvel.ai/apps/goodlinks)) |
 | **mymind** | Visual "private mind", AI auto-tagging | ~$6–13/mo, no free tier | iOS, web | Complaints about social-link processing, uploads, offline, iPad search ([Kimola, 2024 — may be outdated](https://kimola.com/reports/unlock-mymind-app-insights-exclusive-feedback-report-app-store-us-154079)) |
@@ -61,6 +62,18 @@ No well-known product covers the full loop (universal capture → synthesis → 
 - **resaw (iOS, free, launched Oct 2026):** share anything from any app (Reels, web pages, screenshots, chats); it auto-sorts saves and turns them into actions (recipe → grocery list and cooking steps, movie reel → where to watch, café → map pin, timed reminders). Roadmap: a personal assistant that "remembers what you care about". Indian founder; marketed via WhatsApp groups and Instagram ([App Store](https://apps.apple.com/app/apple-store/id6763090945), [Instagram](https://www.instagram.com/resaw.app)). **Closest in capture and share-sheet UX**, but consumer/life-admin focused (recipes, places, shopping): no summaries for knowledge work, no synthesis, no PDF or carousel output, no posting. Too new for user reviews (*unverified*).
 - **NotebookLM:** synthesis plus audio/video output; no share-sheet social capture, no posting.
 - **Taplio / MagicPost / Chartin:** URL → carousel, but no library ([chartin](https://chartin.co/)).
+
+## What reviewers judge read-later apps on (Zapier, Jul 2026)
+
+A checklist SangrahAI should pass before launch, since this is how it will be compared:
+
+1. **One-tap save** from a browser extension or the mobile share sheet (we have the share sheet planned, no extension yet).
+2. **Offline reading** of complete articles on phone, tablet and ideally desktop (Phase 5 in our plan).
+3. **Typography and colour options**, at minimum light and dark (dark mode is free via system colours; no reader typography settings yet).
+4. **Organisation**: tags, folders, highlights (tags done; collections Phase 3; highlights not planned).
+5. **Cross-platform** save-anywhere/read-anywhere (iOS only for now; the web client is deferred).
+
+Our differentiators (AI summaries, tags, synthesis, repurposing) sit on top of this list, not instead of it.
 
 ## Cross-cutting pain points
 
