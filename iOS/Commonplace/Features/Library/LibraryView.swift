@@ -50,6 +50,10 @@ struct LibraryView: View {
                             }
                     }
 
+                    if viewModel.pendingSaveCount > 0 {
+                        processingBanner
+                    }
+
                     // Content
                     if viewModel.isLoading && viewModel.documents.isEmpty {
                         loadingView
@@ -321,6 +325,20 @@ struct LibraryView: View {
             }
         }
         .padding(.horizontal, CPSpacing.screenHorizontal)
+    }
+
+    private var processingBanner: some View {
+        HStack(spacing: CPSpacing.sm) {
+            ProgressView()
+            Text(viewModel.pendingSaveCount == 1
+                 ? "Summarizing 1 link…"
+                 : "Summarizing \(viewModel.pendingSaveCount) links…")
+                .font(.cpFootnote)
+                .foregroundColor(.cpTextSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, CPSpacing.screenHorizontal)
+        .padding(.bottom, CPSpacing.sm)
     }
 
     private var emptyView: some View {

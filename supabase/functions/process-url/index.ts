@@ -227,12 +227,68 @@ function extractDomain(url: string): string {
   }
 }
 
+// fxtwitter mirrors X's public post data. It expands t.co links and carries
+// the body of X Articles under tweet.article.content.blocks, which neither
+// the syndication endpoint (preview only) nor a page fetch (login wall) does.
+async function extractTweetViaFxTwitter(tweetId: string): Promise<ExtractedContent | null> {
+  try {
+    const response = await fetch(`https://api.fxtwitter.com/i/status/${tweetId}`, {
+      headers: { 'User-Agent': 'CommonplaceBot/1.0' },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const tweet = data?.tweet;
+    if (!tweet) return null;
+
+    const author = tweet.author ?? {};
+    const base = {
+      authorName: author.name as string | undefined,
+      authorHandle: author.screen_name ? `@${author.screen_name}` : undefined,
+      publishedAt: tweet.created_at as string | undefined,
+      engagement: {
+        likes: tweet.likes as number | undefined,
+        shares: tweet.retweets as number | undefined,
+        comments: tweet.replies as number | undefined,
+        views: tweet.views as number | undefined,
+      },
+    };
+
+    const blocks = tweet.article?.content?.blocks as Array<{ text?: string }> | undefined;
+    if (blocks && blocks.length > 0) {
+      const paragraphs = blocks
+        .map((block) => (block.text ?? '').trim())
+        .filter((text) => text.length > 0);
+      const title = ((tweet.article?.title as string | undefined) ?? '').trim();
+      return {
+        ...base,
+        title: title || paragraphs[0]?.substring(0, 100) || 'X Article',
+        bodyPlain: paragraphs.join('\n\n'),
+      };
+    }
+
+    const text = ((tweet.text as string | undefined) ?? '').trim();
+    if (!text) return null;
+    return {
+      ...base,
+      title: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      bodyPlain: text,
+    };
+  } catch (e) {
+    console.log('fxtwitter failed:', e);
+    return null;
+  }
+}
+
 // Content extraction - Uses Jina Reader API for high-quality extraction
 async function extractContent(url: string, platform: string): Promise<ExtractedContent> {
-  // For Twitter, try syndication endpoint first
+  // For X / Twitter: fxtwitter first (expanded links, long posts, and X
+  // Articles, whose tweet text is only a t.co link), then the syndication
+  // endpoint as a fallback.
   if (platform === 'twitter') {
     const tweetId = extractTweetId(url);
     if (tweetId) {
+      const viaFx = await extractTweetViaFxTwitter(tweetId);
+      if (viaFx) return viaFx;
       try {
         const response = await fetch(
           `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&token=0`

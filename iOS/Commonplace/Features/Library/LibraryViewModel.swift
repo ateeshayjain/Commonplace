@@ -8,6 +8,8 @@ class LibraryViewModel: ObservableObject {
     @Published var categories: [Category] = Category.systemCategories
     @Published var tags: [Tag] = []
     @Published var isLoading = false
+    /// Links saved from this device whose AI processing has not finished yet.
+    @Published var pendingSaveCount = 0
     @Published var error: Error?
     @Published var sortOrder: SortOrder = .newest {
         didSet {
@@ -261,18 +263,43 @@ class LibraryViewModel: ObservableObject {
             return
         }
 
-        // Real mode: call the API
-        isLoading = true
+        // Real mode: process-url returns as soon as the row exists and keeps
+        // working in the background (fetching, extracting, enriching), so the
+        // Library, which lists completed documents only, would miss it if we
+        // refreshed just once. Return now so the sheet can close, then poll.
         do {
             let response = try await documentService.saveURL(urlString)
-            print("Saved URL: \(response)")
-            await loadDocuments() // Refresh to get the new document
             HapticManager.saveSuccess()
+            pendingSaveCount += 1
+            Task { await waitForProcessing(of: response.id) }
         } catch {
             self.error = error
             HapticManager.error()
         }
-        isLoading = false
+    }
+
+    /// Polls one document until it leaves the processing pipeline, then
+    /// refreshes the list. Gives up after about two minutes.
+    private func waitForProcessing(of id: UUID) async {
+        defer { pendingSaveCount = max(0, pendingSaveCount - 1) }
+        let deadline = Date().addingTimeInterval(120)
+        while Date() < deadline {
+            try? await Task.sleep(for: .seconds(2))
+            guard let document = try? await documentService.fetchDocument(id: id) else { continue }
+            switch document.processingStatus {
+            case .completed:
+                await loadDocuments()
+                return
+            case .failed:
+                self.error = DocumentProcessingError(
+                    message: document.processingError ?? "We couldn't process that link."
+                )
+                return
+            default:
+                continue
+            }
+        }
+        await loadDocuments()
     }
 
     // MARK: - Helpers
@@ -292,4 +319,10 @@ class LibraryViewModel: ObservableObject {
             return formatter.string(from: date)
         }
     }
+}
+
+/// Surfaced when process-url marks a document as failed.
+struct DocumentProcessingError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
