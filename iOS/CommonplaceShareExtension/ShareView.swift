@@ -1,316 +1,134 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Quick save: find the shared link, send it to process-url, show "Saved",
+/// and close. No form; tags and categories are added later in the app.
 struct ShareView: View {
     let extensionContext: NSExtensionContext?
     let onComplete: () -> Void
     let onCancel: () -> Void
 
-    @State private var url: String = ""
-    @State private var title: String = ""
-    @State private var selectedCategories: Set<String> = []
-    @State private var isLoading = false
-    @State private var isSaved = false
-    @State private var error: String?
+    private enum Phase {
+        case saving
+        case saved
+        case failed(String)
+    }
 
-    private let categories = [
-        ("Technology", "💻"),
-        ("Business", "📊"),
-        ("Health", "🏥"),
-        ("Science", "🔬"),
-        ("Culture", "🎭"),
-        ("Design", "🎨")
-    ]
+    @State private var phase: Phase = .saving
+
+    // Brand accent (the app's AccentColor asset is not bundled in the extension)
+    private let accent = Color(red: 0x3F / 255, green: 0x51 / 255, blue: 0xB5 / 255)
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                if isSaved {
-                    savedConfirmation
-                } else {
-                    saveForm
-                }
-            }
-            .navigationTitle("Save to Commonplace")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        onCancel()
-                    }
-                }
+        VStack(spacing: 16) {
+            switch phase {
+            case .saving:
+                ProgressView()
+                    .controlSize(.large)
+                Text("Saving to Sangrah…")
+                    .font(.headline)
+            case .saved:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(accent)
+                Text("Saved to Sangrah")
+                    .font(.headline)
+                Text("The summary will be ready in a moment.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            case .failed(let message):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(.orange)
+                Text("Couldn't save")
+                    .font(.headline)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Done", action: onCancel)
+                    .buttonStyle(.borderedProminent)
+                    .tint(accent)
+                    .padding(.top, 4)
             }
         }
-        .task {
-            await extractSharedContent()
-        }
+        .padding(28)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemBackground))
+        .task { await saveSharedLink() }
     }
 
-    private var saveForm: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Preview
-                VStack(alignment: .leading, spacing: 8) {
-                    if !title.isEmpty {
-                        Text(title)
-                            .font(.headline)
-                            .lineLimit(2)
-                    }
-
-                    Text(url)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
-
-                // Categories
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Categories (optional)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
-                        ForEach(categories, id: \.0) { category in
-                            CategoryChipView(
-                                name: category.0,
-                                icon: category.1,
-                                isSelected: selectedCategories.contains(category.0),
-                                action: {
-                                    if selectedCategories.contains(category.0) {
-                                        selectedCategories.remove(category.0)
-                                    } else {
-                                        selectedCategories.insert(category.0)
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(minLength: 20)
-
-                // Error
-                if let error = error {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-
-                // Actions
-                VStack(spacing: 12) {
-                    Button(action: save) {
-                        if isLoading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Text("Save")
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                    .disabled(isLoading || url.isEmpty)
-                }
-            }
-            .padding()
-        }
-    }
-
-    private var savedConfirmation: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.green)
-
-            Text("Saved!")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text("Processing in background.\nWe'll notify you when it's ready.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-
-            Spacer()
-
-            Button("Done") {
-                onComplete()
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.accentColor)
-            .foregroundColor(.white)
-            .cornerRadius(12)
-        }
-        .padding()
-    }
-
-    private func extractSharedContent() async {
-        guard let extensionContext = extensionContext,
-              let item = extensionContext.inputItems.first as? NSExtensionItem,
-              let attachments = item.attachments else {
+    private func saveSharedLink() async {
+        guard let url = await sharedURL() else {
+            phase = .failed("No link was found in what you shared.")
             return
         }
-
-        for attachment in attachments {
-            // Try URL first
-            if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                do {
-                    if let sharedURL = try await attachment.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL {
-                        self.url = sharedURL.absoluteString
-                    }
-                } catch {
-                    print("Failed to load URL: \(error)")
-                }
-            }
-
-            // Try plain text
-            if attachment.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                do {
-                    if let text = try await attachment.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String {
-                        if let sharedURL = URL(string: text), sharedURL.scheme != nil {
-                            self.url = text
-                        } else {
-                            self.title = String(text.prefix(100))
-                        }
-                    }
-                } catch {
-                    print("Failed to load text: \(error)")
-                }
-            }
-        }
-
-        // Try to get title
-        if let attributedTitle = item.attributedTitle?.string {
-            self.title = attributedTitle
-        } else if let contentText = item.attributedContentText?.string, title.isEmpty {
-            self.title = String(contentText.prefix(100))
+        do {
+            try await ShareExtensionService.shared.saveURL(url)
+            phase = .saved
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            try? await Task.sleep(for: .seconds(1.2))
+            onComplete()
+        } catch {
+            phase = .failed(error.localizedDescription)
         }
     }
 
-    private func save() {
-        isLoading = true
-        error = nil
-
-        Task {
-            do {
-                try await ShareExtensionService.shared.saveURL(
-                    url,
-                    categories: Array(selectedCategories)
-                )
-
-                await MainActor.run {
-                    isSaved = true
-                    // Haptic feedback
-                    let generator = UINotificationFeedbackGenerator()
-                    generator.notificationOccurred(.success)
+    /// The first URL among the shared items: a URL attachment, or plain text
+    /// that is itself a URL (how X and some other apps share links).
+    private func sharedURL() async -> String? {
+        guard let items = extensionContext?.inputItems as? [NSExtensionItem] else { return nil }
+        for item in items {
+            for attachment in item.attachments ?? [] {
+                if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier),
+                   let url = try? await attachment.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL,
+                   url.scheme?.hasPrefix("http") == true {
+                    return url.absoluteString
                 }
-
-                // Auto-dismiss after delay
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                onComplete()
-
-            } catch {
-                await MainActor.run {
-                    self.error = error.localizedDescription
-                    isLoading = false
+            }
+            for attachment in item.attachments ?? [] {
+                if attachment.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
+                   let text = try? await attachment.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String,
+                   let url = firstURL(in: text) {
+                    return url
                 }
             }
         }
+        return nil
     }
-}
 
-// MARK: - Category Chip
-
-struct CategoryChipView: View {
-    let name: String
-    let icon: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Text(icon)
-                    .font(.system(size: 12))
-                Text(name)
-                    .font(.subheadline)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isSelected ? Color.accentColor : Color(.systemGray6))
-            .foregroundColor(isSelected ? .white : .primary)
-            .cornerRadius(20)
-        }
+    private func firstURL(in text: String) -> String? {
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let range = NSRange(text.startIndex..., in: text)
+        return detector?.firstMatch(in: text, range: range)?.url?.absoluteString
     }
 }
 
 // MARK: - Share Extension Service
 
-class ShareExtensionService {
+final class ShareExtensionService {
     static let shared = ShareExtensionService()
 
-    // These would come from a shared config
-    private let supabaseURL = "YOUR_SUPABASE_URL"
-    private let supabaseKey = "YOUR_SUPABASE_ANON_KEY"
-
-    func saveURL(_ url: String, categories: [String]) async throws {
-        // Get auth token from shared keychain
-        guard let token = getSharedAuthToken() else {
+    func saveURL(_ url: String) async throws {
+        guard let token = SharedAuthStore.load() else {
             throw ShareError.notAuthenticated
         }
 
-        var request = URLRequest(url: URL(string: "\(supabaseURL)/functions/v1/process-url")!)
+        var request = URLRequest(url: URL(string: Config.processURLEndpoint)!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
-
-        let body: [String: Any] = [
-            "url": url,
-            "categories": categories
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["url": url, "categories": []])
+        request.timeoutInterval = 20
 
         let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw ShareError.saveFailed
+        guard let http = response as? HTTPURLResponse else { throw ShareError.saveFailed }
+        switch http.statusCode {
+        case 200...299: return
+        case 401, 403: throw ShareError.notAuthenticated
+        default: throw ShareError.saveFailed
         }
-    }
-
-    private func getSharedAuthToken() -> String? {
-        // For demo mode, return a demo token
-        // In production, this would read from shared keychain
-
-        // Read from shared keychain (App Group)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: "supabase_token",
-            kSecAttrAccessGroup as String: "group.app.commonplace",
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let token = String(data: data, encoding: .utf8) else {
-            // Return demo token for testing
-            return "demo_token"
-        }
-
-        return token
     }
 }
 
@@ -321,9 +139,9 @@ enum ShareError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAuthenticated:
-            return "Please sign in to the Commonplace app first"
+            return "Open Sangrah and sign in, then share again."
         case .saveFailed:
-            return "Failed to save. Please try again."
+            return "The save didn't go through. Please try again."
         }
     }
 }

@@ -477,7 +477,7 @@ struct HowToSaveSheet: View {
         Step(
             icon: "square.and.arrow.up",
             title: "Share from any app",
-            detail: "From Safari, X, LinkedIn, or YouTube, tap Share and pick Sangrah. Coming in a later build."
+            detail: "From Safari, X, LinkedIn, or YouTube, tap Share and pick Sangrah. It saves in one tap and closes."
         ),
         Step(
             icon: "sparkles",

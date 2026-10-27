@@ -48,7 +48,37 @@
 		A1000031 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000031 /* Assets.xcassets */; };
 		A1000035 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000036 /* FlowLayout.swift */; };
 		A1000043 /* CPTagChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* CPTagChip.swift */; };
+		A1000050 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000050 /* ShareViewController.swift */; };
+		A1000051 /* ShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* ShareView.swift */; };
+		A1000052 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Config.swift */; };
+		A1000053 /* SharedAuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000054 /* SharedAuthStore.swift */; };
+		A1000054 /* SharedAuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000054 /* SharedAuthStore.swift */; };
+		A1000055 /* CommonplaceShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C1000002 /* CommonplaceShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F1000021 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = H1000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F1000010;
+			remoteInfo = CommonplaceShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F1000022 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A1000055 /* CommonplaceShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		3093240E2F307D6B00E2DF1F /* CampaignView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CampaignView.swift; sourceTree = "<group>"; };
@@ -94,11 +124,24 @@
 		B1000033 /* Commonplace.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Commonplace.entitlements; sourceTree = "<group>"; };
 		B1000036 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		B1000043 /* CPTagChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPTagChip.swift; sourceTree = "<group>"; };
+		B1000050 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		B1000051 /* ShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareView.swift; sourceTree = "<group>"; };
+		B1000052 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B1000053 /* CommonplaceShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CommonplaceShareExtension.entitlements; sourceTree = "<group>"; };
+		B1000054 /* SharedAuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthStore.swift; sourceTree = "<group>"; };
 		C1000001 /* Commonplace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Commonplace.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1000002 /* CommonplaceShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CommonplaceShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		D1000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D1000002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -130,6 +173,7 @@
 			isa = PBXGroup;
 			children = (
 				E1000002 /* Commonplace */,
+				E1000050 /* CommonplaceShareExtension */,
 				E1000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -153,6 +197,7 @@
 			isa = PBXGroup;
 			children = (
 				C1000001 /* Commonplace.app */,
+				C1000002 /* CommonplaceShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -238,6 +283,7 @@
 				309324132F307DBD00E2DF1F /* CampaignService.swift */,
 				B1000007 /* SupabaseService.swift */,
 				B1000008 /* AuthService.swift */,
+				B1000054 /* SharedAuthStore.swift */,
 				B1000009 /* DocumentService.swift */,
 			);
 			path = Services;
@@ -326,6 +372,17 @@
 			path = Components;
 			sourceTree = "<group>";
 		};
+		E1000050 /* CommonplaceShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				B1000050 /* ShareViewController.swift */,
+				B1000051 /* ShareView.swift */,
+				B1000052 /* Info.plist */,
+				B1000053 /* CommonplaceShareExtension.entitlements */,
+			);
+			path = CommonplaceShareExtension;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -336,15 +393,34 @@
 				F1000002 /* Sources */,
 				D1000001 /* Frameworks */,
 				F1000003 /* Resources */,
+				F1000022 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F1000020 /* PBXTargetDependency */,
 			);
 			name = Commonplace;
 			productName = Commonplace;
 			productReference = C1000001 /* Commonplace.app */;
 			productType = "com.apple.product-type.application";
+		};
+		F1000010 /* CommonplaceShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G1000010 /* Build configuration list for PBXNativeTarget "CommonplaceShareExtension" */;
+			buildPhases = (
+				F1000011 /* Sources */,
+				D1000002 /* Frameworks */,
+				F1000012 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CommonplaceShareExtension;
+			productName = CommonplaceShareExtension;
+			productReference = C1000002 /* CommonplaceShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -357,6 +433,9 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					F1000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					F1000010 = {
 						CreatedOnToolsVersion = 15.0;
 					};
 				};
@@ -375,6 +454,7 @@
 			projectRoot = "";
 			targets = (
 				F1000001 /* Commonplace */,
+				F1000010 /* CommonplaceShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -385,6 +465,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000031 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1000012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -408,6 +495,7 @@
 				309324122F307D6B00E2DF1F /* CampaignView.swift in Sources */,
 				A1000007 /* SupabaseService.swift in Sources */,
 				A1000008 /* AuthService.swift in Sources */,
+				A1000053 /* SharedAuthStore.swift in Sources */,
 				A1000009 /* DocumentService.swift in Sources */,
 				A1000010 /* APIClient.swift in Sources */,
 				A1000011 /* LibraryView.swift in Sources */,
@@ -438,7 +526,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F1000011 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000050 /* ShareViewController.swift in Sources */,
+				A1000051 /* ShareView.swift in Sources */,
+				A1000052 /* Config.swift in Sources */,
+				A1000054 /* SharedAuthStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F1000020 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F1000010 /* CommonplaceShareExtension */;
+			targetProxy = F1000021 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		I1000001 /* Debug */ = {
@@ -567,7 +674,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -596,7 +703,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -612,6 +719,54 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.commonplace.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		I1000010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				DEVELOPMENT_TEAM = 3M5BRKQ345;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.commonplace.ios.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		I1000011 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				DEVELOPMENT_TEAM = 3M5BRKQ345;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.commonplace.ios.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -635,6 +790,15 @@
 			buildConfigurations = (
 				I1000001 /* Debug */,
 				I1000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G1000010 /* Build configuration list for PBXNativeTarget "CommonplaceShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				I1000010 /* Debug */,
+				I1000011 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -29,6 +29,7 @@ struct DocumentDetailView: View {
 
                 // Author & metadata
                 authorSection
+                sourceLinkSection
 
                 // AI Hook (pull-quote)
                 if let hook = document.aiHook, !hook.isEmpty {
@@ -173,6 +174,31 @@ struct DocumentDetailView: View {
                 }
                 .font(.cpFootnote)
                 .foregroundColor(.cpTextSecondary)
+            }
+        }
+    }
+
+    /// A visible way to the source. "Open Original" also lives in the toolbar
+    /// menu, but nothing on the page itself looked tappable.
+    @ViewBuilder
+    private var sourceLinkSection: some View {
+        if let urlString = document.sourceUrl, let url = URL(string: urlString) {
+            Link(destination: url) {
+                HStack(spacing: CPSpacing.xs) {
+                    Image(systemName: "arrow.up.right.square")
+                    Text("Read the original on \(document.sourceDomain ?? url.host ?? "the web")")
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.cpCaption1)
+                        .foregroundColor(.cpTextSecondary)
+                }
+                .font(.cpSubhead)
+                .foregroundColor(.cpTint)
+                .padding(.horizontal, CPSpacing.md)
+                .padding(.vertical, CPSpacing.sm)
+                .background(Color.cpBackgroundSecondary)
+                .cornerRadius(CPSpacing.cornerRadiusMedium)
             }
         }
     }

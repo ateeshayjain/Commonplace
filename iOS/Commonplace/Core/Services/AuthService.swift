@@ -359,6 +359,7 @@ class KeychainManager {
         ]
 
         SecItemAdd(attributes as CFDictionary, nil)
+        SharedAuthStore.save(token: token)
     }
 
     func getAuthToken() -> String? {
@@ -389,5 +390,6 @@ class KeychainManager {
         ]
 
         SecItemDelete(query as CFDictionary)
+        SharedAuthStore.clear()
     }
 }

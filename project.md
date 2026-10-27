@@ -127,7 +127,7 @@ Goal: a real user can sign up, share a URL from Safari, and see an AI summary in
 
 | Task | Size |
 |---|---|
-| Add the Share Extension target in Xcode (App Group `group.app.commonplace`, shared Keychain), register its files | S |
+| ~~Add the Share Extension target in Xcode (App Group `group.app.commonplace`, shared Keychain), register its files~~ ✅ 2026-10-27: target `CommonplaceShareExtension` (`app.commonplace.ios.share`), quick-save UI, token shared via `SharedAuthStore` in the App Group keychain; the app must have been opened since sign-in for the extension to have a token (no refresh yet) | S |
 | ~~Build the app in Xcode and fix any compile errors~~ ✅ (3 pre-existing bugs fixed). Still to do: delete the stale `Features/Library/DocumentDetailView.swift` | S |
 | Fix date decoding to accept fractional seconds everywhere (one shared decoder) | S |
 | ~~Wrap `process-url` background work in `EdgeRuntime.waitUntil`~~ ✅ | S |
