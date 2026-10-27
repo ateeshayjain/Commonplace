@@ -24,10 +24,10 @@ struct AuthView: View {
                     .font(.system(size: 60, weight: .light))
                     .foregroundColor(.cpTint)
 
-                Text("Commonplace")
+                Text("Sangrah")
                     .font(.cpLargeTitle)
 
-                Text("Your personal knowledge library")
+                Text("संग्रह · your personal knowledge library")
                     .font(.cpBody)
                     .foregroundColor(.cpTextSecondary)
             }

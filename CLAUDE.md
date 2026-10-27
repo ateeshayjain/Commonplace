@@ -13,7 +13,7 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 
 **Target Users:** Knowledge workers who save articles/threads and want AI insights.
 
-**Roadmap:** the app is being extended into SangrahAI. See [`project.md`](project.md) for the PRD mapping, current status, and the phased development plan.
+**Roadmap:** the app is becoming **Sangrah** (संग्रह; display name set, bundle ids still `app.commonplace.*`). See [`project.md`](project.md) for the PRD mapping, current status, and the phased development plan.
 
 **Branding and design rules:** [`docs/branding.md`](docs/branding.md). Use design-system tokens (`cp*` colours, `cp*` fonts, `CPSpacing`), never literals; no custom brand exists yet (open decisions listed there).
 
@@ -122,8 +122,8 @@ twitter, linkedin, linkedinArticle, article, substack, medium, youtube, podcast,
 - `social_connections`: OAuth credentials per user/platform (unique constraint on user_id + platform)
 - `pdfs` storage bucket: Public bucket for generated PDFs (user-scoped upload, public read)
 
-### SangrahAI Data Model (migration 004)
-The SangrahAI PRD's Prisma schema is mapped onto Supabase SQL, not Prisma:
+### Sangrah Data Model (migration 004)
+The Sangrah PRD's Prisma schema is mapped onto Supabase SQL, not Prisma:
 - **SavedItem → `documents`**: adds `ai_hook` (PRD hook, ≤150 chars at generation) and `metadata` JSONB (YouTube channel/chapters, OCR pages). PRD `executiveSummary` → `ai_summary_long`, `keyTakeaways` → `ai_key_points`
 - **Tag → `tags` + `document_tags`**: per-user (not global). `slug` is generated from `name` (ASCII spaces/punctuation stripped, lowercased) and unique per user, so "Design Trends" and "DesignTrends" dedupe. Don't use `[:punct:]` in slug regexes — it strips Devanagari viramas
 - **Collection → `collections` + `collection_documents`** (Swift: `DocumentCollection`, to avoid clashing with `Swift.Collection`). `is_public` exposes the collection and its item list, not document contents

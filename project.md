@@ -1,8 +1,8 @@
-# SangrahAI (संग्रह) — Project Plan
+# Sangrah (संग्रह) — Project Plan
 
 Multi-format AI content aggregator, organizer, and repurposing pipeline. Users capture content from anywhere (web, Substack, YouTube, Instagram, physical books), Claude turns it into layered summaries and tags, and the app re-exports that knowledge as PDFs, carousels, quote graphics, and video scripts.
 
-This repo started as **Commonplace** (a save-and-summarize iOS app). SangrahAI is built on top of it rather than as a rewrite. Coding conventions live in [`CLAUDE.md`](CLAUDE.md); this file covers scope, status, and the development plan.
+This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (the product name, decided 27 Oct 2026; "Sangrah" was the PRD working title) is built on top of it rather than as a rewrite. Coding conventions live in [`CLAUDE.md`](CLAUDE.md); this file covers scope, status, and the development plan.
 
 ---
 
@@ -207,7 +207,7 @@ Goal: every document gets the PRD summary structure and tags, reliably.
 | Offline: cache summaries and pinned PDFs on device; queue captures made offline | M |
 | Public collections: share link + read-only view (needs a policy exposing documents in public collections, via a SECURITY DEFINER helper to avoid RLS recursion) | M |
 | Subscription tiers: StoreKit 2, server-side enforcement of save/generation limits, lock `subscription_tier` to service role. Visible usage counters, one-tap cancel, INR pricing (≈₹199–299/mo, §8) | L |
-| Rename to SangrahAI: display name, bundle id, App Group, URL scheme, repo docs. Brand decisions (icon, accent, mark) per [`docs/branding.md`](docs/branding.md) §4 | S |
+| Finish the Sangrah rename: bundle id, App Group, URL scheme (display name and sign-in title already done). Brand decisions (icon, accent, mark) per [`docs/branding.md`](docs/branding.md) §4 | S |
 | Observability: Edge Function logs, Claude usage/cost per user, job failure alerts | S |
 | App Store: privacy labels, screenshots, review notes (scraping and social-platform terms) | M |
 
@@ -242,7 +242,7 @@ Phase 0 ──► Phase 1 (queue) ──► Phase 2 ──► Phase 3 ──► 
 | Rendering host | Satori + resvg-wasm in Edge Functions / container service | Phase 4 |
 | Generated video | TTS + template animation / video model vendor / skip for v1 | Post-launch |
 | Model cost controls | Fable 5.1 for synthesis only, or Opus 5.5 everywhere on the free tier | Phase 5 |
-| App name and bundle id | Keep Commonplace ids / move to SangrahAI before App Store submission | Phase 5 |
+| Bundle id, App Group, URL scheme | Name is **Sangrah** (decided). Keep `app.commonplace.*` ids until App Store submission, then move to `app.sangrah.*` (needs new App ID + provisioning) | Phase 5 |
 
 ---
 
@@ -273,7 +273,7 @@ Full research with sources: [`docs/competitive-landscape.md`](docs/competitive-l
 | Repurposing | Taplio, Supergrow, aiCarousels, Canva, Typefully, Castmagic, OpusClip | Start from a blank page or a URL; no knowledge library; billing complaints |
 | Closest full-loop | resaw (new, Indian, share-anything → sorted actions), Second Brain/Rescroll (claims unverified), iOS capture apps (Stashwise, Fofo), Reel savers (Sorti, Siloe) | None covers capture → synthesis → dossier → voice-matched posts; resaw targets life admin (recipes, places), not knowledge |
 
-**Where SangrahAI wins**
+**Where Sangrah wins**
 1. The only full loop: saved knowledge → cited synthesis → PDF dossier / carousel / post.
 2. Social-native capture (Reels, carousels, captions) plus paper-book OCR.
 3. Trust: citations, visible limits, easy cancel, full export from day one.
