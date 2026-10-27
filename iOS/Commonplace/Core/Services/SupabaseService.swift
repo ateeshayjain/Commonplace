@@ -118,6 +118,9 @@ class SupabaseService {
 
     func insert<T: Codable>(into table: String, values: T) async throws -> T {
         let encoder = JSONEncoder()
+        // Postgres rejects Foundation's default Date encoding (seconds since
+        // 2001 as a number) for timestamptz columns with a 400.
+        encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(values)
 
         var request = buildRequest(
