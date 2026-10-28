@@ -236,23 +236,70 @@ async function processContent(
 
 // Anthropic fetches image URLs itself and honours robots.txt, which Instagram's
 // CDN uses to refuse it. Download the slides here instead and pass the bytes.
+// Only Instagram/Facebook CDN hosts over https, no redirects, a timeout, and a
+// streamed byte cap: the URLs come from a third-party page, so treat them as untrusted.
+const IMAGE_HOSTS = [/(^|\.)cdninstagram\.com$/i, /(^|\.)fbcdn\.net$/i];
+
+function isAllowedImageUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'https:' && !parsed.port && IMAGE_HOSTS.some((re) => re.test(parsed.hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function readCapped(response: Response, maxBytes: number): Promise<Uint8Array | null> {
+  const declared = Number(response.headers.get('content-length') ?? '0');
+  if (declared > maxBytes) return null;
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 async function downloadImages(urls: string[], maxBytesEach = 4_000_000, maxTotal = 20_000_000): Promise<ImageInput[]> {
   const images: ImageInput[] = [];
   let total = 0;
   for (const url of urls) {
+    if (!isAllowedImageUrl(url)) continue;
     try {
-      const response = await fetch(url, { headers: { 'Accept': 'image/*' } });
+      const response = await fetch(url, {
+        headers: { 'Accept': 'image/*' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
+      });
       const mediaType = (response.headers.get('content-type') ?? '').split(';')[0].trim();
-      if (!response.ok || !/^image\/(jpeg|png|gif|webp)$/.test(mediaType)) continue;
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength === 0 || bytes.byteLength > maxBytesEach) continue;
-      if (total + bytes.byteLength > maxTotal) break;
+      if (response.status !== 200 || !/^image\/(jpeg|png|gif|webp)$/.test(mediaType)) {
+        await response.body?.cancel();
+        continue;
+      }
+      const bytes = await readCapped(response, Math.min(maxBytesEach, maxTotal - total));
+      if (!bytes || bytes.byteLength === 0) continue;
       total += bytes.byteLength;
       let binary = '';
       for (let i = 0; i < bytes.byteLength; i += 0x8000) {
         binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       }
       images.push({ mediaType, data: btoa(binary) });
+      if (total >= maxTotal) break;
     } catch (e) {
       console.log('Image download failed:', e);
     }
@@ -262,27 +309,30 @@ async function downloadImages(urls: string[], maxBytesEach = 4_000_000, maxTotal
 }
 
 // Platform detection
+// Match on the parsed hostname (and path where it matters), never a substring of
+// the whole URL: a crafted link like https://evil.example/instagram.com/p/x/ must
+// not reach a platform extractor.
 function detectPlatform(url: string): string {
-  const patterns: Record<string, RegExp[]> = {
-    twitter: [/twitter\.com/, /x\.com/],
-    linkedin: [/linkedin\.com\/(posts|pulse|feed|in)\//],
-    youtube: [/youtube\.com/, /youtu\.be/],
-    instagram: [/instagram\.com\/(p|reel|tv)\//],
-    threads: [/threads\.net/],
-    reddit: [/reddit\.com/],
-    hackernews: [/news\.ycombinator\.com/],
-    substack: [/\.substack\.com/],
-    medium: [/medium\.com/],
-  };
-
-  for (const [platform, regexes] of Object.entries(patterns)) {
-    for (const regex of regexes) {
-      if (regex.test(url)) {
-        return platform;
-      }
-    }
+  let host = '';
+  let path = '';
+  try {
+    const parsed = new URL(url);
+    host = parsed.hostname.toLowerCase().replace(/^(www\.|m\.|mobile\.)/, '');
+    path = parsed.pathname;
+  } catch {
+    return 'article';
   }
+  const is = (domain: string) => host === domain || host.endsWith(`.${domain}`);
 
+  if (is('twitter.com') || is('x.com')) return 'twitter';
+  if (is('linkedin.com') && /^\/(posts|pulse|feed|in)\//.test(path)) return 'linkedin';
+  if (is('youtube.com') || host === 'youtu.be') return 'youtube';
+  if (is('instagram.com') && /^\/([^/]+\/)?(p|reel|tv)\//.test(path)) return 'instagram';
+  if (is('threads.net') || is('threads.com')) return 'threads';
+  if (is('reddit.com')) return 'reddit';
+  if (host === 'news.ycombinator.com') return 'hackernews';
+  if (is('substack.com')) return 'substack';
+  if (is('medium.com')) return 'medium';
   return 'article';
 }
 
