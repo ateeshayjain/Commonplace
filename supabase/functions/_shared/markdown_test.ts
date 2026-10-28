@@ -63,3 +63,13 @@ Deno.test("bodyToBlocks marks stored headings in plain text", () => {
   const blocks = bodyToBlocks("Intro\n\n1. A section\n\nBody text\n\n• one\n• two", "T", ["1. A section"]);
   assertEquals(blocks.map((b) => b.kind), ["paragraph", "heading", "paragraph", "list"]);
 });
+
+Deno.test("hostile lines are cleaned in linear time", () => {
+  // 200k characters of unclosed emphasis and link openers took 6-10 s before spans were bounded
+  for (const unit of ["*a ", "_a ", "[a ", "**a "]) {
+    const started = performance.now();
+    cleanInline(unit.repeat(200_000 / unit.length));
+    const elapsed = performance.now() - started;
+    if (elapsed > 1000) throw new Error(`"${unit}" line took ${Math.round(elapsed)} ms`);
+  }
+});

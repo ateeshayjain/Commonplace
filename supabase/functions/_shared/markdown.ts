@@ -17,10 +17,15 @@ export interface CleanedArticle {
   headings: string[];
 }
 
+// Page text is untrusted: every open-ended span below has an upper bound so a
+// hostile line (e.g. 200k characters of "*a ") is cleaned in linear time, not
+// quadratic. Longer links or emphasis are simply left as they are.
+const MAX_INPUT_CHARS = 300_000;
+
 // A link or image destination: allows one level of parentheses and an optional "title"
-const DEST = String.raw`\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)`;
-const IMAGE = new RegExp(String.raw`!\[[^\]]*\]` + DEST, 'g');
-const LINK = new RegExp(String.raw`\[([^\]]*)\]` + DEST, 'g');
+const DEST = String.raw`\((?:[^()\s]|\([^()\s]{0,200}\)){0,2048}(?:\s+"[^"]{0,200}")?\)`;
+const IMAGE = new RegExp(String.raw`!\[[^\]]{0,500}\]` + DEST, 'g');
+const LINK = new RegExp(String.raw`\[([^\]]{0,500})\]` + DEST, 'g');
 
 // Lines that are page furniture, compared after inline cleanup, case-insensitively
 const CHROME_LINES = new Set([
@@ -56,16 +61,16 @@ export function cleanInline(line: string): string {
   return line
     .replace(IMAGE, '')
     .replace(LINK, '$1')
-    .replace(/<(https?:\/\/[^>\s]+)>/g, '$1')
-    .replace(/<\/?(?:br|span|div|sup|sub|em|strong|i|b|u|a)\b[^>]*>/gi, ' ')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, '$1')
-    .replace(/(?<![\w_])__(?=\S)(.+?)(?<=\S)__(?![\w_])/g, '$1')
-    .replace(/(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])/g, '$1')
-    .replace(/(?<![\w_])_(?=[^\s_])(.+?)(?<=[^\s_])_(?![\w_])/g, '$1')
-    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/<(https?:\/\/[^>\s]{1,2048})>/g, '$1')
+    .replace(/<\/?(?:br|span|div|sup|sub|em|strong|i|b|u|a)\b[^>]{0,500}>/gi, ' ')
+    .replace(/`([^`]{1,500})`/g, '$1')
+    .replace(/\*\*(?=\S)(.{1,500}?)(?<=\S)\*\*/g, '$1')
+    .replace(/(?<![\w_])__(?=\S)(.{1,500}?)(?<=\S)__(?![\w_])/g, '$1')
+    .replace(/(?<![\w*])\*(?=[^\s*])(.{1,500}?)(?<=[^\s*])\*(?![\w*])/g, '$1')
+    .replace(/(?<![\w_])_(?=[^\s_])(.{1,500}?)(?<=[^\s_])_(?![\w_])/g, '$1')
+    .replace(/~~(.{1,500}?)~~/g, '$1')
     .replace(/\\([\\`*_{}\[\]()#+\-.!>|~])/g, '$1')
-    .replace(/ /g, ' ')
+    .replace(/\u00a0/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -88,7 +93,7 @@ function isChrome(raw: string, cleaned: string): boolean {
 
 /** Parse article Markdown into blocks, dropping page chrome. */
 export function markdownToBlocks(md: string, title?: string): ArticleBlock[] {
-  let lines = md.replace(/\r\n?/g, '\n').split('\n');
+  let lines = md.slice(0, MAX_INPUT_CHARS).replace(/\r\n?/g, '\n').split('\n');
 
   // Drop the masthead: everything up to the heading that repeats the title
   if (title) {
