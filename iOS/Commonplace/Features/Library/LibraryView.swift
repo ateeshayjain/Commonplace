@@ -3,7 +3,6 @@ import SwiftUI
 struct LibraryView: View {
     @StateObject private var viewModel = LibraryViewModel()
     @State private var selectedCategory: String? = nil
-    @State private var selectedTagId: UUID? = nil
     @State private var searchText = ""
     @State private var showingAddURL = false
     @State private var showingHowToSave = false
@@ -33,22 +32,11 @@ struct LibraryView: View {
                         categories: viewModel.categories,
                         selected: $selectedCategory
                     )
-                    .padding(.bottom, viewModel.tags.isEmpty ? CPSpacing.md : CPSpacing.xs)
+                    .padding(.bottom, viewModel.availableSources.count > 1 ? CPSpacing.xs : CPSpacing.md)
                     .onChange(of: selectedCategory) { _, newValue in
                         Task {
-                            await viewModel.loadDocuments(category: newValue, tagId: selectedTagId)
+                            await viewModel.loadDocuments(category: newValue)
                         }
-                    }
-
-                    // Tag filter (hidden until the user has tags)
-                    if !viewModel.tags.isEmpty {
-                        tagFilterRow
-                            .padding(.bottom, CPSpacing.md)
-                            .onChange(of: selectedTagId) { _, newValue in
-                                Task {
-                                    await viewModel.loadDocuments(category: selectedCategory, tagId: newValue)
-                                }
-                            }
                     }
 
                     // Source filter (hidden until there is more than one source)
@@ -79,18 +67,18 @@ struct LibraryView: View {
             }
             .navigationTitle("Library")
             .refreshable {
-                await viewModel.refresh(category: selectedCategory, tagId: selectedTagId)
+                await viewModel.refresh(category: selectedCategory)
             }
             // Saves made from the Share Extension land while the app is in the
             // background; reload when it comes back so they show without a pull.
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 Task {
-                    await viewModel.refresh(category: selectedCategory, tagId: selectedTagId)
+                    await viewModel.refresh(category: selectedCategory)
                     // A share made seconds before switching back may still be
                     // summarizing; look once more after it has had time to finish.
                     try? await Task.sleep(for: .seconds(15))
-                    await viewModel.refresh(category: selectedCategory, tagId: selectedTagId)
+                    await viewModel.refresh(category: selectedCategory)
                 }
             }
             .toolbar {
@@ -198,7 +186,6 @@ struct LibraryView: View {
             }
         }
         .task {
-            await viewModel.loadTags()
             await viewModel.loadDocuments()
         }
     }
@@ -213,23 +200,6 @@ struct LibraryView: View {
                         prefix: source == .twitter ? "" : source.icon
                     ) {
                         viewModel.selectedSource = viewModel.selectedSource == source ? nil : source
-                    }
-                }
-            }
-            .padding(.horizontal, CPSpacing.screenHorizontal)
-        }
-    }
-
-    private var tagFilterRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: CPSpacing.xs) {
-                ForEach(viewModel.tags) { tag in
-                    CPTagChip(name: tag.name, isSelected: selectedTagId == tag.id) {
-                        if selectedTagId == tag.id {
-                            selectedTagId = nil
-                        } else {
-                            selectedTagId = tag.id
-                        }
                     }
                 }
             }

@@ -6,7 +6,6 @@ class LibraryViewModel: ObservableObject {
     @Published var documents: [Document] = []
     @Published var filteredDocuments: [Document] = []
     @Published var categories: [Category] = Category.systemCategories
-    @Published var tags: [Tag] = []
     @Published var isLoading = false
     /// Links saved from this device whose AI processing has not finished yet.
     @Published var pendingSaveCount = 0
@@ -89,7 +88,7 @@ class LibraryViewModel: ObservableObject {
 
     // MARK: - Loading
 
-    func loadDocuments(category: String? = nil, tagId: UUID? = nil) async {
+    func loadDocuments(category: String? = nil) async {
         isLoading = true
         error = nil
 
@@ -100,12 +99,8 @@ class LibraryViewModel: ObservableObject {
                 if let category = category {
                     documents = documents.filter { $0.userCategories.contains(category) }
                 }
-                // Demo tags mirror AI topics, so filter on the tag's name
-                if let tagId = tagId, let tag = tags.first(where: { $0.id == tagId }) {
-                    documents = documents.filter { $0.aiTopics?.contains(tag.name) == true }
-                }
             } else {
-                documents = try await documentService.fetchDocuments(category: category, tagId: tagId)
+                documents = try await documentService.fetchDocuments(category: category)
             }
 
             applyFilters()
@@ -116,27 +111,8 @@ class LibraryViewModel: ObservableObject {
         isLoading = false
     }
 
-    func loadTags() async {
-        if isDemoMode {
-            // Demo tags get fresh ids each time, so build them once to keep a selection valid
-            if tags.isEmpty {
-                let userId = AuthService.shared.currentUser?.id ?? UUID()
-                tags = documentService.demoTags(for: documentService.fetchDemoDocuments(), userId: userId)
-            }
-            return
-        }
-
-        do {
-            tags = try await documentService.fetchAllTags()
-        } catch {
-            // The filter row simply stays hidden if tags can't be loaded
-            tags = []
-        }
-    }
-
-    func refresh(category: String? = nil, tagId: UUID? = nil) async {
-        await loadTags()
-        await loadDocuments(category: category, tagId: tagId)
+    func refresh(category: String? = nil) async {
+        await loadDocuments(category: category)
     }
 
     // MARK: - Filtering & Sorting
@@ -158,7 +134,9 @@ class LibraryViewModel: ObservableObject {
                 document.title.lowercased().contains(lowercased) ||
                 document.authorName?.lowercased().contains(lowercased) == true ||
                 document.aiSummaryShort?.lowercased().contains(lowercased) == true ||
-                document.userCategories.contains { $0.lowercased().contains(lowercased) }
+                document.userCategories.contains { $0.lowercased().contains(lowercased) } ||
+                // Tags are no longer a filter row, so let the search box find them
+                document.aiTopics?.contains { $0.lowercased().contains(lowercased) } == true
             }
         }
         filteredDocuments = result
