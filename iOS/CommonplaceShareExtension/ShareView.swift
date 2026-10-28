@@ -110,10 +110,28 @@ final class ShareExtensionService {
     static let shared = ShareExtensionService()
 
     func saveURL(_ url: String) async throws {
-        guard let token = SharedAuthStore.load() else {
+        // Same session as the app: refreshed here when the access token is near expiry
+        let sessions = SessionManager.shared
+        var status = try await post(url, token: accessToken(from: sessions))
+        if status == 401 {
+            status = try await post(url, token: accessToken(from: sessions, forceRefresh: true))
+        }
+        switch status {
+        case 200...299: return
+        case 401, 403: throw ShareError.notAuthenticated
+        default: throw ShareError.saveFailed
+        }
+    }
+
+    private func accessToken(from sessions: SessionManager, forceRefresh: Bool = false) async throws -> String {
+        do {
+            return try await sessions.validAccessToken(forceRefresh: forceRefresh)
+        } catch SessionError.signedOut {
             throw ShareError.notAuthenticated
         }
+    }
 
+    private func post(_ url: String, token: String) async throws -> Int {
         var request = URLRequest(url: URL(string: Config.processURLEndpoint)!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -124,11 +142,7 @@ final class ShareExtensionService {
 
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ShareError.saveFailed }
-        switch http.statusCode {
-        case 200...299: return
-        case 401, 403: throw ShareError.notAuthenticated
-        default: throw ShareError.saveFailed
-        }
+        return http.statusCode
     }
 }
 

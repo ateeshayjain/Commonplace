@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var authService: AuthService
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: Tab = .library
 
     enum Tab: Hashable {
@@ -16,6 +17,12 @@ struct ContentView: View {
                 mainTabView
             } else {
                 AuthView()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // A launch while offline leaves the profile unloaded; try again
+            if phase == .active {
+                Task { await authService.loadProfile() }
             }
         }
     }

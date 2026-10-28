@@ -1,7 +1,6 @@
 import Foundation
 import AuthenticationServices
 import SwiftUI
-import Security
 
 @MainActor
 class AuthService: NSObject, ObservableObject {
@@ -13,41 +12,34 @@ class AuthService: NSObject, ObservableObject {
     @Published var error: Error?
 
     private let supabase = SupabaseService.shared
-    private let keychain = KeychainManager.shared
 
     override private init() {
         super.init()
+        SharedAuthStore.removeLegacyTokens()
+        // A stored session means signed in until Supabase rejects its refresh token
+        isAuthenticated = SharedAuthStore.load() != nil
+        NotificationCenter.default.addObserver(
+            forName: .authSessionEnded, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.signOut() }
+        }
         Task {
-            await checkExistingSession()
+            await loadProfile()
         }
     }
 
     // MARK: - Session Management
 
-    func checkExistingSession() async {
-        guard let token = keychain.getAuthToken() else {
-            return
-        }
-
-        supabase.setAuthToken(token)
-
+    /// Loads the profile for a stored session. Being offline or a server error
+    /// keeps the user signed in (the profile loads on the next foreground);
+    /// only a rejected session signs out, through `.authSessionEnded`.
+    func loadProfile() async {
+        guard isAuthenticated, currentUser == nil, SharedAuthStore.load() != nil else { return }
         do {
-            // Verify token is still valid by fetching user
-            let users: [User] = try await supabase.fetch(
-                from: "users",
-                limit: 1
-            )
-
-            if let user = users.first {
-                currentUser = user
-                isAuthenticated = true
-            } else {
-                // Token is invalid, clear it
-                signOut()
-            }
+            let users: [User] = try await supabase.fetch(from: "users", limit: 1)
+            currentUser = users.first
         } catch {
-            // Token is invalid
-            signOut()
+            print("Profile load failed: \(error)")
         }
     }
 
@@ -210,7 +202,6 @@ class AuthService: NSObject, ObservableObject {
 
         currentUser = demoUser
         isAuthenticated = true
-        keychain.setAuthToken("demo_token")
         isLoading = false
     }
 
@@ -219,15 +210,22 @@ class AuthService: NSObject, ObservableObject {
     func signOut() {
         currentUser = nil
         isAuthenticated = false
-        keychain.clearAuthToken()
-        supabase.setAuthToken(nil)
+        SharedAuthStore.clear()
     }
 
     // MARK: - Private Helpers
 
     private func handleAuthResponse(_ response: AuthResponse) async {
-        keychain.setAuthToken(response.accessToken)
-        supabase.setAuthToken(response.accessToken)
+        // Keep the refresh token: without it the session ends when the access token expires (1 hour)
+        guard let refreshToken = response.refreshToken else {
+            self.error = AuthError.signInFailed
+            return
+        }
+        SharedAuthStore.save(AuthSession(
+            accessToken: response.accessToken,
+            refreshToken: refreshToken,
+            expiresAt: Date().addingTimeInterval(response.expiresIn ?? 3600)
+        ))
 
         // Fetch or create user profile
         do {
@@ -256,6 +254,8 @@ class AuthService: NSObject, ObservableObject {
 
             isAuthenticated = true
         } catch {
+            // Don't leave a half-finished sign-in to resume on the next launch
+            SharedAuthStore.clear()
             self.error = error
         }
     }
@@ -286,11 +286,13 @@ extension AuthService: ASAuthorizationControllerDelegate {
 struct AuthResponse: Codable {
     let accessToken: String
     let refreshToken: String?
+    let expiresIn: Double?
     let user: AuthUser
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
+        case expiresIn = "expires_in"
         case user
     }
 }
@@ -329,67 +331,5 @@ enum AuthError: LocalizedError {
         case .userAlreadyExists:
             return "An account with this email already exists. Please sign in instead."
         }
-    }
-}
-
-// MARK: - Keychain Manager
-
-class KeychainManager {
-    static let shared = KeychainManager()
-
-    private let service = Config.keychainService
-    private let account = "auth_token"
-
-    func setAuthToken(_ token: String) {
-        let data = token.data(using: .utf8)!
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-
-        SecItemDelete(query as CFDictionary)
-
-        let attributes: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data
-        ]
-
-        SecItemAdd(attributes as CFDictionary, nil)
-        SharedAuthStore.save(token: token)
-    }
-
-    func getAuthToken() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let token = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-
-        return token
-    }
-
-    func clearAuthToken() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-
-        SecItemDelete(query as CFDictionary)
-        SharedAuthStore.clear()
     }
 }

@@ -6,7 +6,6 @@ class SupabaseService {
 
     private let baseURL: URL
     private let anonKey: String
-    private var authToken: String?
 
     private init() {
         guard let url = URL(string: Config.supabaseURL) else {
@@ -16,19 +15,15 @@ class SupabaseService {
         self.anonKey = Config.supabaseAnonKey
     }
 
-    // MARK: - Auth Token Management
-
-    func setAuthToken(_ token: String?) {
-        self.authToken = token
-    }
-
     // MARK: - Request Building
 
     private func buildRequest(
         endpoint: String,
         method: String = "GET",
         body: Data? = nil,
-        queryParams: [String: String]? = nil
+        queryParams: [String: String]? = nil,
+        headers: [String: String] = [:],
+        token: String?
     ) -> URLRequest {
         var components = URLComponents(url: baseURL.appendingPathComponent(endpoint), resolvingAgainstBaseURL: true)!
 
@@ -40,11 +35,9 @@ class SupabaseService {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
-
-        if let token = authToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        } else {
-            request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(token ?? anonKey)", forHTTPHeaderField: "Authorization")
+        for (field, value) in headers {
+            request.setValue(value, forHTTPHeaderField: field)
         }
 
         if let body = body {
@@ -52,6 +45,36 @@ class SupabaseService {
         }
 
         return request
+    }
+
+    /// Sends a request as the signed-in user (the anon key when signed out),
+    /// with an access token that has not expired. A 401 means the token was
+    /// revoked or expired early: refresh once and retry.
+    private func send(
+        endpoint: String,
+        method: String = "GET",
+        body: Data? = nil,
+        queryParams: [String: String]? = nil,
+        headers: [String: String] = [:]
+    ) async throws -> Data {
+        let signedIn = await SessionManager.shared.hasSession
+        var token = signedIn ? try await SessionManager.shared.validAccessToken() : nil
+
+        var (data, response) = try await URLSession.shared.data(for: buildRequest(
+            endpoint: endpoint, method: method, body: body, queryParams: queryParams, headers: headers, token: token
+        ))
+        if signedIn, (response as? HTTPURLResponse)?.statusCode == 401 {
+            token = try await SessionManager.shared.validAccessToken(forceRefresh: true)
+            (data, response) = try await URLSession.shared.data(for: buildRequest(
+                endpoint: endpoint, method: method, body: body, queryParams: queryParams, headers: headers, token: token
+            ))
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw SupabaseError.requestFailed
+        }
+        return data
     }
 
     // MARK: - REST API
@@ -74,17 +97,10 @@ class SupabaseService {
             queryParams["limit"] = String(limit)
         }
 
-        let request = buildRequest(
+        let data = try await send(
             endpoint: "rest/v1/\(table)",
             queryParams: queryParams
         )
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw SupabaseError.requestFailed
-        }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
@@ -123,19 +139,12 @@ class SupabaseService {
         encoder.dateEncodingStrategy = .iso8601
         let body = try encoder.encode(values)
 
-        var request = buildRequest(
+        let data = try await send(
             endpoint: "rest/v1/\(table)",
             method: "POST",
-            body: body
+            body: body,
+            headers: ["Prefer": "return=representation"]
         )
-        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw SupabaseError.requestFailed
-        }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -155,34 +164,20 @@ class SupabaseService {
     ) async throws {
         let body = try JSONSerialization.data(withJSONObject: values)
 
-        let request = buildRequest(
+        _ = try await send(
             endpoint: "rest/v1/\(table)",
             method: "PATCH",
             body: body,
             queryParams: ["id": "eq.\(id.uuidString)"]
         )
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw SupabaseError.requestFailed
-        }
     }
 
     func delete(from table: String, id: UUID) async throws {
-        let request = buildRequest(
+        _ = try await send(
             endpoint: "rest/v1/\(table)",
             method: "DELETE",
             queryParams: ["id": "eq.\(id.uuidString)"]
         )
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw SupabaseError.requestFailed
-        }
     }
 
     // MARK: - RPC (Remote Procedure Calls)
@@ -193,18 +188,11 @@ class SupabaseService {
     ) async throws -> T {
         let body = try JSONSerialization.data(withJSONObject: params)
 
-        let request = buildRequest(
+        let data = try await send(
             endpoint: "rest/v1/rpc/\(function)",
             method: "POST",
             body: body
         )
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw SupabaseError.requestFailed
-        }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -220,18 +208,11 @@ class SupabaseService {
     ) async throws -> T {
         let bodyData = try JSONSerialization.data(withJSONObject: body)
 
-        let request = buildRequest(
+        let data = try await send(
             endpoint: "functions/v1/\(name)",
             method: "POST",
             body: bodyData
         )
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw SupabaseError.requestFailed
-        }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
