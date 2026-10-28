@@ -8,6 +8,16 @@ class DocumentDetailViewModel: ObservableObject {
     @Published var tags: [Tag] = []
     @Published var isLoading = false
     @Published var error: Error?
+    /// Set once the document is gone, so the view can close itself.
+    @Published var isDeleted = false
+    @Published var isPreparingPDF = false
+    /// A file ready to hand to the share sheet.
+    @Published var sharedFile: SharedFile?
+
+    struct SharedFile: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
 
     private let documentService = DocumentService.shared
 
@@ -89,11 +99,34 @@ class DocumentDetailViewModel: ObservableObject {
     func deleteDocument() {
         Task {
             do {
-                try await documentService.deleteDocument(document.id)
+                // Demo documents live only in memory
+                if AuthService.shared.currentUser?.email != "demo@commonplace.app" {
+                    try await documentService.deleteDocument(document.id)
+                }
                 HapticManager.deleteWarning()
-                // Navigation back would be handled by the view
+                NotificationCenter.default.post(name: .documentDeleted, object: document.id)
+                isDeleted = true
             } catch {
                 self.error = error
+                HapticManager.error()
+            }
+        }
+    }
+
+    func sharePDF() {
+        guard !isPreparingPDF else { return }
+        if AuthService.shared.currentUser?.email == "demo@commonplace.app" {
+            error = PDFShareError.demoMode
+            return
+        }
+        isPreparingPDF = true
+        Task {
+            defer { isPreparingPDF = false }
+            do {
+                let file = try await documentService.pdfFile(for: document)
+                sharedFile = SharedFile(url: file)
+            } catch {
+                self.error = PDFShareError.failed
                 HapticManager.error()
             }
         }
@@ -109,6 +142,18 @@ class DocumentDetailViewModel: ObservableObject {
                 self.error = error
                 HapticManager.error()
             }
+        }
+    }
+}
+
+enum PDFShareError: LocalizedError {
+    case demoMode
+    case failed
+
+    var errorDescription: String? {
+        switch self {
+        case .demoMode: return "Sign in to share items as PDF."
+        case .failed: return "Couldn't create the PDF. Please try again."
         }
     }
 }

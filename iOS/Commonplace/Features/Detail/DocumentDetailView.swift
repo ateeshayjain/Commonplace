@@ -9,6 +9,8 @@ struct DocumentDetailView: View {
     @State private var showingCategorySheet = false
     @State private var showingNotes = false
     @State private var showingCampaign = false
+    @State private var showingDeleteConfirmation = false
+    @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
         self.document = document
@@ -72,6 +74,9 @@ struct DocumentDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                shareMenu
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     toolbarMenuContent
                 } label: {
@@ -79,10 +84,36 @@ struct DocumentDetailView: View {
                 }
             }
         }
+        .sheet(item: $viewModel.sharedFile) { file in
+            ActivityView(items: [file.url])
+                .presentationDetents([.medium, .large])
+                .ignoresSafeArea()
+        }
         .fullScreenCover(isPresented: $showingPDF) {
             if let pdfUrl = document.pdfUrl, let url = URL(string: pdfUrl) {
                 PDFViewerView(url: url, title: document.title)
             }
+        }
+        .confirmationDialog(
+            "Delete this item?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { viewModel.deleteDocument() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It will be removed from your library.")
+        }
+        .onChange(of: viewModel.isDeleted) { _, deleted in
+            if deleted { dismiss() }
+        }
+        .alert("Error", isPresented: .init(
+            get: { viewModel.error != nil },
+            set: { if !$0 { viewModel.error = nil } }
+        )) {
+            Button("OK") { viewModel.error = nil }
+        } message: {
+            Text(viewModel.error?.localizedDescription ?? "Something went wrong.")
         }
         .sheet(isPresented: $showingCategorySheet) {
             CategorySelectionSheet(
@@ -367,6 +398,29 @@ struct DocumentDetailView: View {
         }
     }
 
+    private var shareMenu: some View {
+        Menu {
+            Button {
+                viewModel.sharePDF()
+            } label: {
+                Label("Share as PDF", systemImage: "doc.richtext")
+            }
+            if let link = document.sourceUrl, let url = URL(string: link) {
+                ShareLink(item: url) {
+                    Label("Share Link", systemImage: "link")
+                }
+            }
+        } label: {
+            if viewModel.isPreparingPDF {
+                ProgressView()
+            } else {
+                Image(systemName: "square.and.arrow.up")
+            }
+        }
+        .disabled(viewModel.isPreparingPDF)
+        .accessibilityLabel("Share")
+    }
+
     @ViewBuilder
     private var toolbarMenuContent: some View {
         Button {
@@ -410,7 +464,7 @@ struct DocumentDetailView: View {
         Divider()
 
         Button(role: .destructive) {
-            viewModel.deleteDocument()
+            showingDeleteConfirmation = true
         } label: {
             Label("Delete", systemImage: "trash")
         }
@@ -459,4 +513,18 @@ struct ComplexityIndicator: View {
     NavigationStack {
         DocumentDetailView(document: .preview)
     }
+}
+
+// MARK: - Share sheet
+
+/// UIActivityViewController for SwiftUI sheets; presenting from the root view
+/// controller fails silently when another screen is already presented.
+private struct ActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

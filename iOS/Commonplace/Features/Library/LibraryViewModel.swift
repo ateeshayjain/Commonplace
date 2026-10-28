@@ -30,6 +30,26 @@ class LibraryViewModel: ObservableObject {
     }
 
     private let documentService = DocumentService.shared
+    private var deletionObserver: NSObjectProtocol?
+
+    init() {
+        deletionObserver = NotificationCenter.default.addObserver(
+            forName: .documentDeleted, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let id = note.object as? UUID else { return }
+            Task { @MainActor in self?.removeDocument(id: id) }
+        }
+    }
+
+    deinit {
+        if let deletionObserver { NotificationCenter.default.removeObserver(deletionObserver) }
+    }
+
+    /// Drop a document deleted elsewhere (e.g. from its detail screen) without a reload.
+    func removeDocument(id: UUID) {
+        documents.removeAll { $0.id == id }
+        filteredDocuments.removeAll { $0.id == id }
+    }
     private var searchQuery = ""
 
     enum SortOrder {

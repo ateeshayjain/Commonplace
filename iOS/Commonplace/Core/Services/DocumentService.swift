@@ -1,5 +1,10 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted with the deleted document's UUID as `object` so open lists can drop it.
+    static let documentDeleted = Notification.Name("documentDeleted")
+}
+
 class DocumentService {
     static let shared = DocumentService()
 
@@ -157,6 +162,47 @@ class DocumentService {
     }
 
     // MARK: - Delete Document
+
+    // MARK: - PDF
+
+    /// A local PDF of the document, ready for the share sheet. Reuses the stored
+    /// PDF when there is one and regenerates it (generate-pdf) when there is not
+    /// or the stored copy can't be downloaded.
+    func pdfFile(for document: Document) async throws -> URL {
+        if let stored = document.pdfUrl, stored.hasPrefix("https://"), let url = URL(string: stored),
+           let file = try? await download(pdf: url, title: document.title) {
+            return file
+        }
+        struct PDFResponse: Decodable { let pdfUrl: String }
+        let response: PDFResponse = try await supabase.invokeFunction(
+            name: "generate-pdf",
+            body: ["documentId": document.id.uuidString]
+        )
+        guard let url = URL(string: response.pdfUrl) else { throw SupabaseError.invalidResponse }
+        return try await download(pdf: url, title: document.title)
+    }
+
+    private func download(pdf url: URL, title: String) async throws -> URL {
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              data.starts(with: Array("%PDF".utf8)) else {
+            throw SupabaseError.invalidResponse
+        }
+        // A readable file name for the share sheet and the recipient
+        let unsafe = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines).union(.controlCharacters)
+        var name = title.components(separatedBy: unsafe).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if name.count > 80 { name = String(name.prefix(80)).trimmingCharacters(in: .whitespaces) }
+        if name.isEmpty { name = "Sangrah" }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-share", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("\(name).pdf")
+        try? FileManager.default.removeItem(at: file)
+        try data.write(to: file, options: .atomic)
+        return file
+    }
 
     func deleteDocument(_ id: UUID) async throws {
         try await supabase.delete(from: "documents", id: id)

@@ -111,7 +111,8 @@ serve(async (req) => {
 });
 
 // PDF Generation
-async function generateArticlePDF(document: any): Promise<Uint8Array> {
+async function generateArticlePDF(input: any): Promise<Uint8Array> {
+  let document = input;
   const pdfDoc = await PDFDocument.create();
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -128,6 +129,48 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
   let page = pdfDoc.addPage(PageSizes.Letter);
   let yPosition = pageHeight - margin;
 
+  // The standard fonts only encode Windows-1252 (WinAnsi); pdf-lib throws on
+  // anything else (emoji, arrows, Devanagari, a bare newline). Map common
+  // look-alikes and drop the rest, testing each character with the real encoder.
+  const REPLACEMENTS: Record<string, string> = {
+    '\u2192': '->', '\u2190': '<-', '\u2194': '<->', '\u21d2': '=>',
+    '\u2212': '-', '\u2010': '-', '\u2011': '-', '\u2012': '-', '\u2015': '-',
+    '\u2032': "'", '\u2033': '"', '\u2009': ' ', '\u200a': ' ', '\u202f': ' ',
+    '\u2002': ' ', '\u2003': ' ', '\u2007': ' ', '\u2008': ' ', '\t': ' ',
+    '\u2264': '<=', '\u2265': '>=', '\u2260': '!=', '\u2713': 'v', '\u2714': 'v',
+    '\u25cf': '•', '\u25aa': '•', '\u25b6': '>', '\u2605': '*', '\u2606': '*',
+  };
+  const encodable = new Map<string, boolean>();
+  function safe(text: string | null | undefined): string {
+    if (!text) return '';
+    let out = '';
+    for (const ch of text.normalize('NFC')) {
+      if (ch === '\n') { out += '\n'; continue; }
+      const mapped = REPLACEMENTS[ch] ?? ch;
+      for (const part of mapped) {
+        let ok = encodable.get(part);
+        if (ok === undefined) {
+          try { helvetica.widthOfTextAtSize(part, 10); helveticaBold.widthOfTextAtSize(part, 10); ok = true; } catch { ok = false; }
+          encodable.set(part, ok);
+        }
+        if (ok) out += part;
+      }
+    }
+    return out.replace(/[ ]{2,}/g, ' ');
+  }
+  document = {
+    ...document,
+    title: safe(document.title) || 'Untitled',
+    author_name: safe(document.author_name),
+    author_handle: safe(document.author_handle),
+    source_domain: safe(document.source_domain),
+    // Footer link without share-tracking parameters (?s=12, ?xtok=..., ?si=...)
+    source_url: safe((document.source_url ?? '').split('?')[0]),
+    ai_summary_short: safe(document.ai_summary_short),
+    ai_key_points: (document.ai_key_points ?? []).map((p: string) => safe(p)).filter((p: string) => p.trim()),
+    body_plain: safe(document.body_plain),
+  };
+
   // Helper: Add new page if needed
   function ensureSpace(height: number): void {
     if (yPosition - height < margin) {
@@ -138,26 +181,23 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
 
   // Helper: Wrap text into lines
   function wrapText(text: string, font: any, size: number, maxWidth: number): string[] {
-    const words = text.split(' ');
     const lines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const width = font.widthOfTextAtSize(testLine, size);
-
-      if (width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
+    for (const rawLine of text.split('\n')) {
+      const words = rawLine.split(' ').filter((w) => w.length > 0);
+      let currentLine = '';
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        if (font.widthOfTextAtSize(testLine, size) > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
       }
-    }
-
-    if (currentLine) {
       lines.push(currentLine);
     }
-
+    // keep blank lines inside a paragraph, but not trailing ones
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
     return lines;
   }
 
@@ -183,7 +223,7 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
   }
 
   // === HEADER: Source & Date ===
-  const sourceText = `${getSourceIcon(document.source_type)} ${document.source_domain || document.source_type}`;
+  const sourceText = `${getSourceLabel(document.source_type)} · ${document.source_domain || document.source_type}`;
   const dateText = formatDate(document.created_at);
 
   page.drawText(sourceText, {
@@ -255,7 +295,7 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
 
     // Draw summary box background
     const summaryLines = wrapText(document.ai_summary_short, helvetica, bodySize, contentWidth - 20);
-    const boxHeight = (summaryLines.length * lineHeight) + 40;
+    const boxHeight = (summaryLines.length * lineHeight) + 52;
 
     page.drawRectangle({
       x: margin,
@@ -270,7 +310,7 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
     yPosition -= 10;
 
     // Summary header
-    page.drawText('✨ AI Summary', {
+    page.drawText('AI Summary', {
       x: margin + 10,
       y: yPosition,
       font: helveticaBold,
@@ -292,7 +332,7 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
       yPosition -= lineHeight;
     }
 
-    yPosition -= 20;
+    yPosition -= 32;
   }
 
   // === KEY POINTS ===
@@ -353,7 +393,11 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
 
   // === FOOTER (on last page) ===
   yPosition = margin - 20;
-  const footerText = `Saved with Commonplace • ${document.source_url || ''}`;
+  let footerText = `Saved with Sangrah • ${document.source_url || ''}`;
+  while (footerText.length > 20 && helvetica.widthOfTextAtSize(footerText, 8) > contentWidth) {
+    footerText = footerText.slice(0, -2) + '…';
+    footerText = footerText.replace(/……$/, '…');
+  }
   const footerWidth = helvetica.widthOfTextAtSize(footerText, 8);
 
   page.drawText(footerText, {
@@ -367,22 +411,23 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
   return await pdfDoc.save();
 }
 
-function getSourceIcon(sourceType: string): string {
-  const icons: Record<string, string> = {
-    twitter: '𝕏',
-    linkedin: 'in',
-    youtube: '▶',
-    article: '📄',
-    substack: '📧',
-    medium: 'M',
-    reddit: '🔴',
-    hackernews: 'Y',
-    instagram: '📷',
-    threads: '🧵',
-    podcast: '🎙',
-    pdf: '📑',
+// Plain-text labels: the standard PDF fonts cannot draw emoji
+function getSourceLabel(sourceType: string): string {
+  const labels: Record<string, string> = {
+    twitter: 'X',
+    linkedin: 'LinkedIn',
+    youtube: 'YouTube',
+    article: 'Article',
+    substack: 'Substack',
+    medium: 'Medium',
+    reddit: 'Reddit',
+    hackernews: 'Hacker News',
+    instagram: 'Instagram',
+    threads: 'Threads',
+    podcast: 'Podcast',
+    pdf: 'PDF',
   };
-  return icons[sourceType] || '📄';
+  return labels[sourceType] || 'Saved';
 }
 
 function formatDate(dateString: string): string {
