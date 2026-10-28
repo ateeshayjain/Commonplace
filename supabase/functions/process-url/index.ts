@@ -507,13 +507,83 @@ async function extractYouTube(url: string): Promise<ExtractedContent | null> {
   };
 }
 
-// Instagram: Jina returns the public page as markdown. The caption is in the
-// title/description; the carousel slides, where the real text usually is, are
-// image links that Claude reads later (ExtractedContent.images).
-async function extractInstagram(url: string): Promise<ExtractedContent | null> {
+// Instagram. Primary source: the post's public embed page (the one sites use to
+// embed a post), which carries the caption, the account and every carousel
+// slide's image URL. Jina is a fallback; Instagram started refusing it (403) on
+// 28 Oct 2026. Slides are read later by Claude (ExtractedContent.images).
+function instagramShortcode(url: string): string | null {
+  try {
+    const match = new URL(url).pathname.match(/^\/(?:[^/]+\/)?(?:p|reel|tv)\/([A-Za-z0-9_-]{5,})/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
+}
+
+async function extractInstagramEmbed(shortcode: string): Promise<ExtractedContent | null> {
+  try {
+    const response = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.status !== 200) return null;
+    const html = await response.text();
+
+    const block = html.match(/class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/)
+      ?? html.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/);
+    let caption = '';
+    let username: string | undefined;
+    if (block) {
+      username = block[1].match(/class="CaptionUsername"[^>]*>([^<]+)</)?.[1]?.trim();
+      caption = decodeHtmlEntities(
+        block[1]
+          .replace(/<br\s*\/?>/g, '\n')
+          .replace(/<a class="CaptionUsername"[\s\S]*?<\/a>/, '')
+          .replace(/<[^>]+>/g, '')
+      ).replace(/[ \t]+/g, ' ').trim();
+    }
+    username = username ?? html.match(/class="UsernameText"[^>]*>([^<]+)</)?.[1]?.trim();
+
+    // The post JSON sits in a script as an escaped string; undo that escaping once
+    const unescaped = html
+      .replace(/\\\\\//g, '/').replace(/\\\//g, '/')
+      .replace(/\\u0025/g, '%').replace(/\\u0026/g, '&').replace(/\\"/g, '"');
+    const sidecar = unescaped.indexOf('"edge_sidecar_to_children"');
+    const region = sidecar >= 0 ? unescaped.slice(sidecar) : unescaped;
+    const images: string[] = [];
+    for (const match of region.matchAll(/"display_url":"(https:[^"]+)"/g)) {
+      if (!images.includes(match[1])) images.push(match[1]);
+      if (images.length >= 10) break;
+    }
+
+    if (!caption && images.length === 0) return null;
+    const firstLine = caption.split('\n')[0] || `Instagram post${username ? ` by @${username}` : ''}`;
+    return {
+      title: firstLine.substring(0, 120),
+      bodyPlain: caption,
+      authorName: username,
+      authorHandle: username ? `@${username}` : undefined,
+      images,
+      metadata: images.length ? { imageCount: images.length } : {},
+    };
+  } catch (e) {
+    console.log('Instagram embed failed:', e);
+    return null;
+  }
+}
+
+async function extractInstagramViaJina(url: string): Promise<ExtractedContent | null> {
   try {
     const response = await fetch(`https://r.jina.ai/${url}`, {
       headers: { 'Accept': 'application/json', 'X-Return-Format': 'markdown' },
+      signal: AbortSignal.timeout(20_000),
     });
     if (!response.ok) return null;
     const envelope = await response.json();
@@ -521,18 +591,17 @@ async function extractInstagram(url: string): Promise<ExtractedContent | null> {
     const rawTitle: string = page.title ?? '';
     const markdown: string = page.content ?? '';
 
-    // "Name on Instagram: "caption text""
+    // "Name on Instagram: "caption text"". Anything else is the login wall, not the post.
     const titleMatch = rawTitle.match(/^(.*?) on Instagram: ["\u201c](.*)["\u201d]\s*$/s);
-    const authorName = titleMatch ? titleMatch[1].trim() : undefined;
-    const caption = (titleMatch ? titleMatch[2] : (page.description ?? '')).trim();
+    if (!titleMatch) return null;
+    const authorName = titleMatch[1].trim();
+    const caption = titleMatch[2].trim();
 
-    // Carousel/post images: skip profile pictures and tiny thumbnails, keep order, dedupe
     const images: string[] = [];
     const seenFiles = new Set<string>();
     for (const match of markdown.matchAll(/!\[[^\]]*\]\((https:\/\/[^)\s]*cdninstagram\.com[^)\s]*)\)/g)) {
       const src = match[1];
       if (/profile picture|s150x150|s320x320/.test(match[0])) continue;
-      // The same slide appears at several sizes; the file name is the slide's identity
       let file = src;
       try { file = new URL(src).pathname.split('/').pop() ?? src; } catch { /* keep src */ }
       if (seenFiles.has(file)) continue;
@@ -541,20 +610,27 @@ async function extractInstagram(url: string): Promise<ExtractedContent | null> {
       if (images.length >= 10) break;
     }
 
-    const handle = url.match(/instagram\.com\/([^/?#]+)\//)?.[1];
-    const firstLine = caption.split('\n')[0] || `Instagram post${authorName ? ` by ${authorName}` : ''}`;
+    const firstLine = caption.split('\n')[0] || `Instagram post by ${authorName}`;
     return {
       title: firstLine.substring(0, 120),
       bodyPlain: caption,
       authorName,
-      authorHandle: handle && handle !== 'p' && handle !== 'reel' ? `@${handle}` : undefined,
       images,
       metadata: images.length ? { imageCount: images.length } : {},
     };
   } catch (e) {
-    console.log('Instagram extraction failed:', e);
+    console.log('Instagram via Jina failed:', e);
     return null;
   }
+}
+
+async function extractInstagram(url: string): Promise<ExtractedContent | null> {
+  const shortcode = instagramShortcode(url);
+  if (shortcode) {
+    const embedded = await extractInstagramEmbed(shortcode);
+    if (embedded) return embedded;
+  }
+  return await extractInstagramViaJina(url);
 }
 
 // Content extraction - Uses Jina Reader API for high-quality extraction
@@ -601,6 +677,8 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
   if (platform === 'instagram') {
     const post = await extractInstagram(url);
     if (post) return post;
+    // The generic path would only reach Instagram's login wall and summarise that
+    throw new Error("Couldn't read this Instagram post. It may be private or deleted.");
   }
 
   // Try Jina Reader API first (free tier: 1M tokens/month)
