@@ -57,7 +57,12 @@ export interface BookOcrMetadata {
   pageNumbers?: number[];
 }
 
-export type DocumentMetadata = YouTubeMetadata | BookOcrMetadata | Record<string, unknown>;
+// Articles read through Jina (Substack, Medium, blogs); body_plain is plain text
+export interface ArticleMetadata {
+  headings?: string[];       // section headings in body_plain, in order
+}
+
+export type DocumentMetadata = YouTubeMetadata | BookOcrMetadata | ArticleMetadata | Record<string, unknown>;
 
 // ============================================
 // API requests (PRD section 6; itemId -> documentId)

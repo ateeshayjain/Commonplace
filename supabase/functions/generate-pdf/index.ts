@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb, PageSizes } from "https://esm.sh/pdf-lib@1.17.1";
+import { bodyToBlocks } from '../_shared/markdown.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -206,13 +207,14 @@ async function generateArticlePDF(input: any): Promise<Uint8Array> {
     text: string,
     font: any,
     size: number,
-    color = rgb(0.1, 0.1, 0.1)
+    color = rgb(0.1, 0.1, 0.1),
+    indent = 0
   ): void {
-    const lines = wrapText(text, font, size, contentWidth);
+    const lines = wrapText(text, font, size, contentWidth - indent);
     for (const line of lines) {
       ensureSpace(lineHeight);
       page.drawText(line, {
-        x: margin,
+        x: margin + indent,
         y: yPosition,
         font,
         size,
@@ -379,15 +381,30 @@ async function generateArticlePDF(input: any): Promise<Uint8Array> {
 
   // === CONTENT ===
   if (document.body_plain) {
-    // Split into paragraphs
-    const paragraphs = document.body_plain.split(/\n\n+/);
+    // Older article saves hold Jina's raw Markdown; newer ones are plain text
+    // with their section headings listed in metadata.headings
+    const headings = (document.metadata?.headings ?? []).map((h: string) => safe(h));
+    const blocks = bodyToBlocks(document.body_plain, document.title, headings);
 
-    for (const paragraph of paragraphs) {
-      const cleanPara = paragraph.trim();
-      if (!cleanPara) continue;
+    for (const block of blocks) {
+      const text = block.text.trim();
+      if (!text) continue;
 
-      drawWrappedText(cleanPara, helvetica, bodySize);
-      yPosition -= 10; // Paragraph spacing
+      switch (block.kind) {
+        case 'heading':
+          ensureSpace(lineHeight * 3); // keep a heading with the text under it
+          yPosition -= 6;
+          drawWrappedText(text, helveticaBold, 13);
+          yPosition -= 4;
+          break;
+        case 'quote':
+          drawWrappedText(text, helvetica, bodySize, rgb(0.35, 0.35, 0.35), 16);
+          yPosition -= 10;
+          break;
+        default:
+          drawWrappedText(text, helvetica, bodySize);
+          yPosition -= 10; // Paragraph spacing
+      }
     }
   }
 

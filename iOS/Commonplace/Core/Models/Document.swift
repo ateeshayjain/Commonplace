@@ -213,6 +213,9 @@ struct DocumentMetadata: Codable, Hashable {
     var bookTitle: String?
     var pageNumbers: [Int]?
 
+    // Articles: section headings in bodyPlain, in order
+    var headings: [String]?
+
     struct Chapter: Codable, Hashable {
         let startSec: Int
         let title: String

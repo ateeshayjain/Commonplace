@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Anthropic, CLAUDE_MODELS, generateJSON, type ImageInput } from '../_shared/claude.ts';
 import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
 import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT } from '../_shared/generation.ts';
+import { cleanArticleMarkdown } from '../_shared/markdown.ts';
 
 // Supabase Edge Runtime: keeps background work alive after the response is sent
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -696,15 +697,18 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
       // With Accept: application/json, Jina wraps the page in { code, status, data: {...} }.
       // Reading the fields off the envelope produced "Untitled" with an empty body.
       const page = envelope?.data && typeof envelope.data === 'object' ? envelope.data : envelope;
-      const body: string = page.content || page.text || '';
-      if (body.trim().length > 0) {
+      const markdown: string = page.content || page.text || '';
+      // Jina returns Markdown; body_plain is shown and printed as plain text
+      const article = cleanArticleMarkdown(markdown, page.title);
+      if (article.text.trim().length > 0) {
         console.log('Jina extraction successful');
         return {
           title: page.title || 'Untitled',
           subtitle: page.description,
-          bodyPlain: body,
+          bodyPlain: article.text,
           authorName: page.author,
           publishedAt: page.publishedTime,
+          metadata: article.headings.length ? { headings: article.headings } : undefined,
         };
       }
       console.log('Jina returned no body text, falling back to HTML parsing');
@@ -721,6 +725,10 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
       },
     });
     const html = await response.text();
+    // A bot wall (Cloudflare on Medium) is not the article; never summarise it
+    if (!response.ok || /<title>(Attention Required!|Just a moment)/i.test(html)) {
+      throw new BlockedPageError(`This site didn't let us read the page (HTTP ${response.status}). Try again later.`);
+    }
 
     // Extract basic metadata from HTML
     const title = extractFromHTML(html, /<title>([^<]+)<\/title>/i) ||
@@ -749,6 +757,7 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
       authorName: authorName ?? undefined,
     };
   } catch (e) {
+    if (e instanceof BlockedPageError) throw e;
     console.error('Extraction failed:', e);
     return {
       title: 'Could not extract content',
@@ -756,6 +765,8 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
     };
   }
 }
+
+class BlockedPageError extends Error {}
 
 function extractTweetId(url: string): string | null {
   const match = url.match(/status\/(\d+)/);
