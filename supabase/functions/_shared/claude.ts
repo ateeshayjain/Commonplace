@@ -61,10 +61,14 @@ export async function generateText(
 // additionalProperties:false; enforce lengths and counts in code afterwards.
 export type JSONSchema = Record<string, unknown>;
 
+// An image for the model: a public URL (fetched by Anthropic, which honours
+// robots.txt) or bytes already downloaded (base64, for hosts that block it).
+export type ImageInput = string | { mediaType: string; data: string };
+
 interface GenerateJSONOptions extends GenerateTextOptions {
   schema: JSONSchema;
-  // Public image URLs to show the model before the prompt (e.g. carousel slides)
-  images?: string[];
+  // Images to show the model before the prompt (e.g. carousel slides)
+  images?: ImageInput[];
 }
 
 // Same as generateText, but Claude is constrained to return JSON matching `schema`,
@@ -74,7 +78,11 @@ export async function generateJSON<T>(
   { model, prompt, system, maxTokens = 16000, effort, schema, images = [] }: GenerateJSONOptions
 ): Promise<T> {
   const content = [
-    ...images.map((url) => ({ type: 'image' as const, source: { type: 'url' as const, url } })),
+    ...images.map((image) =>
+      typeof image === 'string'
+        ? { type: 'image' as const, source: { type: 'url' as const, url: image } }
+        : { type: 'image' as const, source: { type: 'base64' as const, media_type: image.mediaType, data: image.data } }
+    ),
     { type: 'text' as const, text: prompt },
   ];
   const response = await anthropic.beta.messages.create({

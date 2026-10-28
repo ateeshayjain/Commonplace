@@ -3,7 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Anthropic, CLAUDE_MODELS, generateJSON } from '../_shared/claude.ts';
+import { Anthropic, CLAUDE_MODELS, generateJSON, type ImageInput } from '../_shared/claude.ts';
 import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
 import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT } from '../_shared/generation.ts';
 
@@ -184,7 +184,8 @@ async function processContent(
 
     // Generate AI enrichment, reusing the user's existing tags where they fit
     const existingTags = await fetchRecentTagNames(supabase, userId);
-    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags, content.images ?? []);
+    const slideImages = await downloadImages(content.images ?? []);
+    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags, slideImages);
     // Slide text read from the images becomes part of the saved body
     if (aiEnrichment.transcribedText) {
       const combined = `${content.bodyPlain}\n\n${aiEnrichment.transcribedText}`.trim();
@@ -231,6 +232,33 @@ async function processContent(
       })
       .eq('id', documentId);
   }
+}
+
+// Anthropic fetches image URLs itself and honours robots.txt, which Instagram's
+// CDN uses to refuse it. Download the slides here instead and pass the bytes.
+async function downloadImages(urls: string[], maxBytesEach = 4_000_000, maxTotal = 20_000_000): Promise<ImageInput[]> {
+  const images: ImageInput[] = [];
+  let total = 0;
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { headers: { 'Accept': 'image/*' } });
+      const mediaType = (response.headers.get('content-type') ?? '').split(';')[0].trim();
+      if (!response.ok || !/^image\/(jpeg|png|gif|webp)$/.test(mediaType)) continue;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength === 0 || bytes.byteLength > maxBytesEach) continue;
+      if (total + bytes.byteLength > maxTotal) break;
+      total += bytes.byteLength;
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      images.push({ mediaType, data: btoa(binary) });
+    } catch (e) {
+      console.log('Image download failed:', e);
+    }
+  }
+  if (urls.length) console.log(`Downloaded ${images.length}/${urls.length} images (${total} bytes)`);
+  return images;
 }
 
 // Platform detection
@@ -660,7 +688,7 @@ function fallbackEnrichment(content: string): Enrichment {
 
 const STATUS_TAGS = /^(missing content|needs review|shortened url|twitter link|no content|untitled)$/i;
 
-async function generateAIEnrichment(title: string, content: string, existingTags: string[], images: string[] = []): Promise<Enrichment> {
+async function generateAIEnrichment(title: string, content: string, existingTags: string[], images: ImageInput[] = []): Promise<Enrichment> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
