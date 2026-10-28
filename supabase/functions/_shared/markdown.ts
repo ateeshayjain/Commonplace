@@ -32,8 +32,16 @@ const CHROME_LINES = new Set([
   'subscribe', 'sign in', 'subscribe sign in', 'sign up', 'share', 'like', 'comment',
   'comments', 'restack', 'previous', 'next', 'listen', 'follow', 'see all', 'get app',
   'write', 'upgrade to paid', 'member-only story', 'top latest discussions',
-  'press enter or click to view image in full size',
+  'press enter or click to view image in full size', 'remember me for faster sign in',
 ]);
+
+// Page furniture that varies by article (reading time, Medium's sign-up box, checkboxes)
+const CHROME_PATTERNS = [
+  /^\d+ min read$/i,
+  /^get .{1,120} stories in your inbox$/i,
+  /^join medium for free\b/i,
+  /^[-*+]?\s*\[[ x]\]$/i,
+];
 
 // Everything from one of these lines on is comments, related posts or the site footer
 const END_MARKERS = [
@@ -45,6 +53,9 @@ const END_MARKERS = [
   /^recommended from medium$/i,
   /^more from .+ and .+$/i,
 ];
+
+// Only as a heading: Medium's author footer. A guest post may open with "Written by ..."
+const HEADING_END_MARKERS = [/^written by .+$/i];
 
 const MONTH = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*';
 const DATE_LINE = new RegExp(`^${MONTH}\\.? \\d{1,2}(?:, \\d{4})?$`, 'i');
@@ -83,6 +94,7 @@ function isChrome(raw: string, cleaned: string): boolean {
   const bare = cleaned.replace(SEPARATORS, ' ').replace(/\s+/g, ' ').trim();
   if (!bare) return true;
   if (CHROME_LINES.has(bare.toLowerCase())) return true;
+  if (CHROME_PATTERNS.some((re) => re.test(bare))) return true;
   if (COUNT_LINE.test(bare) || DATE_LINE.test(bare)) return true;
   if (/^\d[\d,.]*[km]? (likes?|restacks?|comments?|claps?)$/i.test(bare)) return true;
   if (/^©/.test(bare) || /^already have an account\?/i.test(bare)) return true;
@@ -130,7 +142,7 @@ export function markdownToBlocks(md: string, title?: string): ArticleBlock[] {
     if (heading) {
       flush();
       const text = cleanInline(heading[1]);
-      if (END_MARKERS.some((re) => re.test(text))) break;
+      if ([...END_MARKERS, ...HEADING_END_MARKERS].some((re) => re.test(text))) break;
       if (!isChrome(heading[1], text)) blocks.push({ kind: 'heading', text });
       continue;
     }

@@ -54,6 +54,35 @@ Deno.test("Substack masthead, byline, counts and comments are removed", () => {
   assertEquals(result.headings, ["The subtitle", "1. A section"]);
 });
 
+Deno.test("Medium reading time, sign-up box and author footer are removed", () => {
+  const md = [
+    "# Title",
+    "9 min read",
+    "",
+    "Body one.",
+    "",
+    "## Get Jane Doe’s stories in your inbox",
+    "Join Medium for free to get updates from this writer.",
+    "Subscribe",
+    "- [x] ",
+    "Remember me for faster sign in",
+    "",
+    "## A real section",
+    "Body two.",
+    "",
+    "## [Written by Jane Doe](https://medium.com/@jane)",
+    "I write about things.",
+  ].join("\n");
+  const result = cleanArticleMarkdown(md, "Title");
+  assertEquals(result.text, "Body one.\n\nA real section\n\nBody two.");
+  assertEquals(result.headings, ["A real section"]);
+});
+
+Deno.test("a guest post opening with 'Written by' keeps its body", () => {
+  const result = cleanArticleMarkdown("# Title\n\nWritten by our guest, Jane Doe.\n\nThe argument.", "Title");
+  assertEquals(result.text, "Written by our guest, Jane Doe.\n\nThe argument.");
+});
+
 Deno.test("plain bodies (X posts) are not treated as Markdown", () => {
   assertEquals(looksLikeMarkdown("Thread on #AI 🧵\n\n1/ the_point is simple"), false);
   assertEquals(looksLikeMarkdown("See [this](https://ex.com)"), true);
