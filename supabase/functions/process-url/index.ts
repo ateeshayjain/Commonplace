@@ -37,6 +37,8 @@ interface ExtractedContent {
   threadParts?: string[];
   // Source-specific extras stored in documents.metadata (shape: DocumentMetadata in iOS)
   metadata?: Record<string, unknown>;
+  // Images whose text is part of the content (Instagram carousel slides); read by Claude vision
+  images?: string[];
 }
 
 serve(async (req) => {
@@ -75,6 +77,23 @@ serve(async (req) => {
     // Detect platform
     const platform = detectPlatform(url);
 
+    // The same link shared twice is one item, not two
+    const canonical = canonicalUrl(url);
+    const { data: existing } = await supabase
+      .from('documents')
+      .select('id, processing_status')
+      .eq('user_id', user.id)
+      .in('source_url', [url, canonical])
+      .neq('processing_status', 'failed')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (existing && existing.length > 0) {
+      return new Response(
+        JSON.stringify({ id: existing[0].id, status: existing[0].processing_status, message: 'Already saved' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
+
     // Create initial document record
     const { data: document, error: insertError } = await supabase
       .from('documents')
@@ -96,7 +115,7 @@ serve(async (req) => {
     }
 
     // Process asynchronously; without waitUntil the runtime may kill this after responding
-    const processing = processContent(supabase, user.id, document.id, url, platform);
+    const processing = processContent(supabase, user.id, document.id, url, platform, categories.length === 0);
     if (typeof EdgeRuntime !== 'undefined') {
       EdgeRuntime.waitUntil(processing);
     }
@@ -131,7 +150,8 @@ async function processContent(
   userId: string,
   documentId: string,
   url: string,
-  platform: string
+  platform: string,
+  autoCategorise: boolean
 ) {
   try {
     // Update status
@@ -164,7 +184,19 @@ async function processContent(
 
     // Generate AI enrichment, reusing the user's existing tags where they fit
     const existingTags = await fetchRecentTagNames(supabase, userId);
-    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags);
+    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags, content.images ?? []);
+    // Slide text read from the images becomes part of the saved body
+    if (aiEnrichment.transcribedText) {
+      const combined = `${content.bodyPlain}\n\n${aiEnrichment.transcribedText}`.trim();
+      await supabase
+        .from('documents')
+        .update({
+          body_plain: combined,
+          word_count: combined.split(/\s+/).length,
+          reading_time_minutes: Math.ceil(combined.split(/\s+/).length / 200),
+        })
+        .eq('id', documentId);
+    }
 
     // Update with AI enrichment (PRD: hook / executiveSummary / keyTakeaways)
     await supabase
@@ -178,6 +210,10 @@ async function processContent(
         ai_topics: aiEnrichment.tags, // kept for the current UI until tags are shown
         ai_complexity_score: aiEnrichment.complexityScore,
         ai_reading_level: aiEnrichment.readingLevel,
+        // The Library filters, rows and detail read user_categories; when the
+        // save did not name any, the AI's picks become the starting point
+        // (the user can still edit them).
+        ...(autoCategorise ? { user_categories: aiEnrichment.categories } : {}),
         processing_status: 'completed',
         processed_at: new Date().toISOString(),
       })
@@ -220,6 +256,20 @@ function detectPlatform(url: string): string {
   }
 
   return 'article';
+}
+
+// Drop tracking parameters so x.com/...?s=12 and ...?s=46 are the same save
+function canonicalUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/^(s|t|si|igsh|igshid|psln|cplk|xtok|obrf|utm_[a-z]+|fbclid|ref_src)$/i.test(key)) parsed.searchParams.delete(key);
+    }
+    parsed.hash = '';
+    return parsed.toString().replace(/\?$/, '');
+  } catch {
+    return url;
+  }
 }
 
 function extractDomain(url: string): string {
@@ -269,11 +319,17 @@ async function extractTweetViaFxTwitter(tweetId: string): Promise<ExtractedConte
       };
     }
 
-    const text = ((tweet.text as string | undefined) ?? '').trim();
+    let text = ((tweet.text as string | undefined) ?? '').trim();
+    const quote = tweet.quote;
+    if (quote?.text) {
+      const quotedBy = quote.author?.screen_name ? `@${quote.author.screen_name}` : 'the quoted post';
+      text = `${text}\n\nQuoting ${quotedBy}:\n${String(quote.text).trim()}`.trim();
+    }
     if (!text) return null;
+    const firstLine = text.split('\n')[0];
     return {
       ...base,
-      title: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      title: firstLine.substring(0, 100) + (firstLine.length > 100 ? '...' : ''),
       bodyPlain: text,
     };
   } catch (e) {
@@ -373,6 +429,56 @@ async function extractYouTube(url: string): Promise<ExtractedContent | null> {
   };
 }
 
+// Instagram: Jina returns the public page as markdown. The caption is in the
+// title/description; the carousel slides, where the real text usually is, are
+// image links that Claude reads later (ExtractedContent.images).
+async function extractInstagram(url: string): Promise<ExtractedContent | null> {
+  try {
+    const response = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { 'Accept': 'application/json', 'X-Return-Format': 'markdown' },
+    });
+    if (!response.ok) return null;
+    const envelope = await response.json();
+    const page = envelope?.data && typeof envelope.data === 'object' ? envelope.data : envelope;
+    const rawTitle: string = page.title ?? '';
+    const markdown: string = page.content ?? '';
+
+    // "Name on Instagram: "caption text""
+    const titleMatch = rawTitle.match(/^(.*?) on Instagram: ["\u201c](.*)["\u201d]\s*$/s);
+    const authorName = titleMatch ? titleMatch[1].trim() : undefined;
+    const caption = (titleMatch ? titleMatch[2] : (page.description ?? '')).trim();
+
+    // Carousel/post images: skip profile pictures and tiny thumbnails, keep order, dedupe
+    const images: string[] = [];
+    const seenFiles = new Set<string>();
+    for (const match of markdown.matchAll(/!\[[^\]]*\]\((https:\/\/[^)\s]*cdninstagram\.com[^)\s]*)\)/g)) {
+      const src = match[1];
+      if (/profile picture|s150x150|s320x320/.test(match[0])) continue;
+      // The same slide appears at several sizes; the file name is the slide's identity
+      let file = src;
+      try { file = new URL(src).pathname.split('/').pop() ?? src; } catch { /* keep src */ }
+      if (seenFiles.has(file)) continue;
+      seenFiles.add(file);
+      images.push(src);
+      if (images.length >= 10) break;
+    }
+
+    const handle = url.match(/instagram\.com\/([^/?#]+)\//)?.[1];
+    const firstLine = caption.split('\n')[0] || `Instagram post${authorName ? ` by ${authorName}` : ''}`;
+    return {
+      title: firstLine.substring(0, 120),
+      bodyPlain: caption,
+      authorName,
+      authorHandle: handle && handle !== 'p' && handle !== 'reel' ? `@${handle}` : undefined,
+      images,
+      metadata: images.length ? { imageCount: images.length } : {},
+    };
+  } catch (e) {
+    console.log('Instagram extraction failed:', e);
+    return null;
+  }
+}
+
 // Content extraction - Uses Jina Reader API for high-quality extraction
 async function extractContent(url: string, platform: string): Promise<ExtractedContent> {
   // For X / Twitter: fxtwitter first (expanded links, long posts, and X
@@ -412,6 +518,11 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
   if (platform === 'youtube') {
     const video = await extractYouTube(url);
     if (video) return video;
+  }
+
+  if (platform === 'instagram') {
+    const post = await extractInstagram(url);
+    if (post) return post;
   }
 
   // Try Jina Reader API first (free tier: 1M tokens/month)
@@ -510,6 +621,7 @@ interface Enrichment {
   categories: string[];
   complexityScore: number;   // 1-10
   readingLevel: 'casual' | 'intermediate' | 'advanced' | 'expert';
+  transcribedText?: string;  // text read from supplied images, empty when none
 }
 
 const CATEGORIES = ['Technology', 'Business', 'Health', 'Science', 'Culture', 'Politics', 'Design', 'Personal Dev'];
@@ -518,8 +630,9 @@ const CATEGORIES = ['Technology', 'Business', 'Health', 'Science', 'Culture', 'P
 const ENRICHMENT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['hook', 'summaryShort', 'executiveSummary', 'keyTakeaways', 'tags', 'categories', 'complexityScore', 'readingLevel'],
+  required: ['hook', 'summaryShort', 'executiveSummary', 'keyTakeaways', 'tags', 'categories', 'complexityScore', 'readingLevel', 'transcribedText'],
   properties: {
+    transcribedText: { type: 'string' },
     hook: { type: 'string' },
     summaryShort: { type: 'string' },
     executiveSummary: { type: 'string' },
@@ -541,10 +654,13 @@ function fallbackEnrichment(content: string): Enrichment {
     categories: [],
     complexityScore: 5,
     readingLevel: 'intermediate',
+    transcribedText: '',
   };
 }
 
-async function generateAIEnrichment(title: string, content: string, existingTags: string[]): Promise<Enrichment> {
+const STATUS_TAGS = /^(missing content|needs review|shortened url|twitter link|no content|untitled)$/i;
+
+async function generateAIEnrichment(title: string, content: string, existingTags: string[], images: string[] = []): Promise<Enrichment> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
@@ -559,7 +675,9 @@ async function generateAIEnrichment(title: string, content: string, existingTags
       model: CLAUDE_MODELS.standard,
       effort: 'low',
       schema: ENRICHMENT_SCHEMA,
+      images,
       prompt: `Analyze this content for a personal knowledge library.
+${images.length ? `The ${images.length} image(s) above are the post's slides; their text IS the content. Transcribe them faithfully, in order, into transcribedText (plain text, slide breaks as blank lines) and base everything below on caption plus slides.` : 'transcribedText: return an empty string.'}
 
 Title: ${title}
 Content: ${content.substring(0, 10000)}
@@ -569,7 +687,7 @@ Produce:
 - summaryShort: 2-3 sentences on the main insight.
 - executiveSummary: a markdown bullet list (5-8 bullets) of the arguments, key figures and practical implications.
 - keyTakeaways: exactly ${KEY_TAKEAWAY_COUNT} actionable takeaways, each one sentence.
-- tags: 3-6 short topical tags (1-3 words each, Title Case, no # symbol). Specific over generic: "Transformer Models" not "AI".
+- tags: 3-6 short topical tags (1-3 words each, Title Case, no # symbol). Specific over generic: "Transformer Models" not "AI". Tags describe the subject only; never add status labels such as "Missing Content" or "Needs Review". If the content is thin, summarize what is there without commenting on what is missing.
 ${existingTags.length ? `  Reuse these existing tags when they fit, spelled exactly as given: ${existingTags.join(', ')}` : ''}
 - categories: 1-2 from: ${CATEGORIES.join(', ')}.
 - complexityScore: 1 (casual) to 10 (expert).
@@ -583,10 +701,11 @@ Write in the language of the content.`,
       summaryShort: result.summaryShort.trim(),
       executiveSummary: result.executiveSummary.trim(),
       keyTakeaways: result.keyTakeaways.slice(0, KEY_TAKEAWAY_COUNT),
-      tags: result.tags,
+      tags: result.tags.filter((tag) => !STATUS_TAGS.test(tag.trim())),
       categories: result.categories.filter((c) => CATEGORIES.includes(c)),
       complexityScore: Math.min(10, Math.max(1, Math.round(result.complexityScore))),
       readingLevel: result.readingLevel,
+      transcribedText: (result.transcribedText ?? '').trim(),
     };
   } catch (e) {
     console.error('AI enrichment failed:', e);

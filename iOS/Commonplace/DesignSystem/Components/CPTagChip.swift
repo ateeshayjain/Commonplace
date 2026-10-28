@@ -5,6 +5,9 @@ import SwiftUI
 struct CPTagChip: View {
     let name: String
     var isSelected: Bool = false
+    /// Optional leading glyph (a source icon for source chips). Tags show their
+    /// name alone; the hash prefix was dropped on 2026-10-28 as visual noise.
+    var prefix: String = ""
     var action: (() -> Void)? = nil
 
     var body: some View {
@@ -23,8 +26,10 @@ struct CPTagChip: View {
 
     private var label: some View {
         HStack(spacing: 2) {
-            Text("#")
-                .foregroundColor(isSelected ? .white.opacity(0.8) : .cpTextSecondary)
+            if !prefix.isEmpty {
+                Text(prefix)
+                    .foregroundColor(isSelected ? .white.opacity(0.8) : .cpTextSecondary)
+            }
 
             Text(name)
         }

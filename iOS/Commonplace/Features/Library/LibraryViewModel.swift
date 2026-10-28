@@ -10,6 +10,18 @@ class LibraryViewModel: ObservableObject {
     @Published var isLoading = false
     /// Links saved from this device whose AI processing has not finished yet.
     @Published var pendingSaveCount = 0
+    /// Second filter axis next to categories: where the item came from.
+    @Published var selectedSource: SourceType? {
+        didSet { applyFilters() }
+    }
+
+    /// Sources present in the loaded documents, most common first.
+    var availableSources: [SourceType] {
+        var counts: [SourceType: Int] = [:]
+        for document in documents { counts[document.sourceType, default: 0] += 1 }
+        return counts.sorted { $0.value == $1.value ? $0.key.displayName < $1.key.displayName : $0.value > $1.value }
+            .map(\.key)
+    }
     @Published var error: Error?
     @Published var sortOrder: SortOrder = .newest {
         didSet {
@@ -76,8 +88,7 @@ class LibraryViewModel: ObservableObject {
                 documents = try await documentService.fetchDocuments(category: category, tagId: tagId)
             }
 
-            filteredDocuments = documents
-            sortDocuments()
+            applyFilters()
         } catch {
             self.error = error
         }
@@ -112,19 +123,25 @@ class LibraryViewModel: ObservableObject {
 
     func filterDocuments(query: String) {
         searchQuery = query
+        applyFilters()
+    }
 
-        if query.isEmpty {
-            filteredDocuments = documents
-        } else {
-            let lowercased = query.lowercased()
-            filteredDocuments = documents.filter { document in
+    /// Client-side filters on top of what the server returned: source and search text.
+    private func applyFilters() {
+        var result = documents
+        if let source = selectedSource {
+            result = result.filter { $0.sourceType == source }
+        }
+        if !searchQuery.isEmpty {
+            let lowercased = searchQuery.lowercased()
+            result = result.filter { document in
                 document.title.lowercased().contains(lowercased) ||
                 document.authorName?.lowercased().contains(lowercased) == true ||
                 document.aiSummaryShort?.lowercased().contains(lowercased) == true ||
                 document.userCategories.contains { $0.lowercased().contains(lowercased) }
             }
         }
-
+        filteredDocuments = result
         sortDocuments()
     }
 

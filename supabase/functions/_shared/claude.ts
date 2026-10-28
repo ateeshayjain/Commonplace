@@ -63,14 +63,20 @@ export type JSONSchema = Record<string, unknown>;
 
 interface GenerateJSONOptions extends GenerateTextOptions {
   schema: JSONSchema;
+  // Public image URLs to show the model before the prompt (e.g. carousel slides)
+  images?: string[];
 }
 
 // Same as generateText, but Claude is constrained to return JSON matching `schema`,
 // so the result can be parsed directly instead of regex-matched out of prose.
 export async function generateJSON<T>(
   anthropic: Anthropic,
-  { model, prompt, system, maxTokens = 16000, effort, schema }: GenerateJSONOptions
+  { model, prompt, system, maxTokens = 16000, effort, schema, images = [] }: GenerateJSONOptions
 ): Promise<T> {
+  const content = [
+    ...images.map((url) => ({ type: 'image' as const, source: { type: 'url' as const, url } })),
+    { type: 'text' as const, text: prompt },
+  ];
   const response = await anthropic.beta.messages.create({
     model,
     max_tokens: maxTokens,
@@ -81,7 +87,7 @@ export async function generateJSON<T>(
     },
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    messages: [{ role: 'user', content: prompt }],
+    messages: [{ role: 'user', content }],
   });
 
   if (response.stop_reason === 'refusal') {

@@ -14,6 +14,7 @@ struct LibraryView: View {
     @State private var isSelectMode = false
     @State private var selectedDocuments: Set<UUID> = []
     @State private var showingCompose = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -50,6 +51,12 @@ struct LibraryView: View {
                             }
                     }
 
+                    // Source filter (hidden until there is more than one source)
+                    if viewModel.availableSources.count > 1 {
+                        sourceFilterRow
+                            .padding(.bottom, CPSpacing.md)
+                    }
+
                     if viewModel.pendingSaveCount > 0 {
                         processingBanner
                     }
@@ -73,6 +80,18 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .refreshable {
                 await viewModel.refresh(category: selectedCategory, tagId: selectedTagId)
+            }
+            // Saves made from the Share Extension land while the app is in the
+            // background; reload when it comes back so they show without a pull.
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                Task {
+                    await viewModel.refresh(category: selectedCategory, tagId: selectedTagId)
+                    // A share made seconds before switching back may still be
+                    // summarizing; look once more after it has had time to finish.
+                    try? await Task.sleep(for: .seconds(15))
+                    await viewModel.refresh(category: selectedCategory, tagId: selectedTagId)
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -181,6 +200,23 @@ struct LibraryView: View {
         .task {
             await viewModel.loadTags()
             await viewModel.loadDocuments()
+        }
+    }
+
+    private var sourceFilterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: CPSpacing.xs) {
+                ForEach(viewModel.availableSources, id: \.self) { source in
+                    CPTagChip(
+                        name: source == .twitter ? "X" : source.displayName,
+                        isSelected: viewModel.selectedSource == source,
+                        prefix: source == .twitter ? "" : source.icon
+                    ) {
+                        viewModel.selectedSource = viewModel.selectedSource == source ? nil : source
+                    }
+                }
+            }
+            .padding(.horizontal, CPSpacing.screenHorizontal)
         }
     }
 
