@@ -11,6 +11,7 @@ struct DocumentDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var isContentExpanded = false
     @State private var sharingQuote: ShareableQuote?
+    @State private var visibleQuoteID: ShareableQuote.ID?
     @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
@@ -236,16 +237,37 @@ struct DocumentDetailView: View {
         }
     }
 
+    /// Swipeable cards, one quote each, with page dots like an Instagram carousel
     private func quotesSection(_ quotes: [ShareableQuote]) -> some View {
-        VStack(alignment: .leading, spacing: CPSpacing.md) {
-            ForEach(quotes) { quote in
-                quoteRow(quote)
+        let currentIndex = quotes.firstIndex { $0.id == visibleQuoteID } ?? 0
+
+        return VStack(spacing: CPSpacing.sm) {
+            ScrollView(.horizontal) {
+                HStack(spacing: CPSpacing.sm) {
+                    ForEach(quotes) { quote in
+                        quoteCard(quote)
+                            .containerRelativeFrame(.horizontal)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollIndicators(.hidden)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $visibleQuoteID)
+            // Full-bleed, so the next card peeks in at the screen edge
+            .contentMargins(.horizontal, CPSpacing.screenHorizontal, for: .scrollContent)
+            .padding(.horizontal, -CPSpacing.screenHorizontal)
+
+            if quotes.count > 1 {
+                pageDots(count: quotes.count, current: currentIndex) { index in
+                    withAnimation { visibleQuoteID = quotes[index].id }
+                }
             }
         }
     }
 
     /// The pull-quote style of the hook, for every quote, with a share button
-    private func quoteRow(_ quote: ShareableQuote) -> some View {
+    private func quoteCard(_ quote: ShareableQuote) -> some View {
         HStack(alignment: .top, spacing: CPSpacing.sm) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color.cpTint)
@@ -253,19 +275,18 @@ struct DocumentDetailView: View {
 
             VStack(alignment: .leading, spacing: CPSpacing.xs) {
                 Text(quote.isVerbatim ? "\u{201C}\(quote.text)\u{201D}" : quote.text)
-                    .font(quote.isVerbatim ? .cpBody : .cpTitle3)
+                    .font(quote.isVerbatim ? .cpTitle3 : .cpTitle2)
                     .italic()
                     .foregroundColor(.cpText)
                     .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+
+                Spacer(minLength: 0)
 
                 HStack {
-                    if quote.isVerbatim, let author = document.authorName {
-                        Text("\u{2014} \(author)")
-                            .font(.cpFootnote)
-                            .foregroundColor(.cpTextSecondary)
-                            .lineLimit(1)
-                    }
+                    Text(quote.isVerbatim ? "\u{2014} \(document.authorName ?? document.sourceType.displayName)" : "Key idea")
+                        .font(.cpFootnote)
+                        .foregroundColor(.cpTextSecondary)
+                        .lineLimit(1)
                     Spacer()
                     Button {
                         sharingQuote = quote
@@ -278,7 +299,26 @@ struct DocumentDetailView: View {
                 }
             }
         }
-        .padding(.vertical, CPSpacing.xxs)
+        .padding(CPSpacing.cardPadding)
+        // Every card as tall as the tallest, so the row doesn't jump while swiping
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.cpBackgroundSecondary)
+        .cornerRadius(CPSpacing.cornerRadiusLarge)
+    }
+
+    private func pageDots(count: Int, current: Int, select: @escaping (Int) -> Void) -> some View {
+        HStack(spacing: 6) {
+            ForEach(0..<count, id: \.self) { index in
+                Circle()
+                    .fill(index == current ? Color.cpTint : Color.cpTextSecondary.opacity(0.35))
+                    .frame(width: 7, height: 7)
+                    .onTapGesture { select(index) }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .animation(.easeInOut(duration: 0.2), value: current)
+        .accessibilityElement()
+        .accessibilityLabel("Quote \(current + 1) of \(count)")
     }
 
     private func tagsSection(_ tags: [Tag]) -> some View {

@@ -21,7 +21,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Sangrah saves the quote cards you choose to your photo library.</string>
 	<key>CFBundleVersion</key>
-	<string>15</string>
+	<string>16</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
