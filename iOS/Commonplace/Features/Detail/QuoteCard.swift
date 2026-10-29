@@ -111,8 +111,8 @@ struct ShareableQuote: Identifiable, Hashable {
         let credit = Self.credit(for: document)
         var lines = [isVerbatim ? "\u{201C}\(displayText)\u{201D}" : displayText, ""]
         lines.append(isVerbatim ? "\u{2014} \(credit.title)" : "From \(credit.title)")
-        if let author = credit.author { lines.append(author) }
-        if let source = credit.source { lines.append(source) }
+        if let author = credit.author { lines.append("By \(author)") }
+        if let source = credit.source { lines.append("On \(source)") }
         if let url = document.sourceUrl {
             lines.append("")
             lines.append("Read it: \(url)")
@@ -231,7 +231,7 @@ struct QuoteCardView: View {
 
 // MARK: - Credit
 
-/// "— Article title" / author / [logo] source, each on its own line. Shared by
+/// "— Article title" / "By author" / "On [logo] source", each on its own line. Shared by
 /// the share image, the detail page's quote cards and the Quotes tab.
 struct QuoteCreditView: View {
     let document: Document
@@ -256,7 +256,7 @@ struct QuoteCreditView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if let author = credit.author {
-                Text(author)
+                Text("By \(author)")
                     .font(detailFont)
                     .foregroundColor(secondary)
                     .lineLimit(1)
@@ -264,6 +264,9 @@ struct QuoteCreditView: View {
 
             if let source = credit.source {
                 HStack(spacing: 5) {
+                    Text("On")
+                        .font(detailFont)
+                        .foregroundColor(secondary)
                     SourceIcon(type: document.sourceType, size: 13, tint: iconTint)
                     Text(source)
                         .font(detailFont)
