@@ -11,7 +11,7 @@ final class QuotesViewModel: ObservableObject {
         guard !query.isEmpty else { return visible }
 
         return visible.filter { quote in
-            let fields = [quote.text, quote.document.map(ShareableQuote.credit(for:)) ?? ""]
+            let fields = [quote.text, quote.document.map(ShareableQuote.creditLine(for:)) ?? ""]
             return fields.contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }

@@ -6,7 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Anthropic, CLAUDE_MODELS, generateJSON, type ImageInput } from '../_shared/claude.ts';
 import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
 import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT } from '../_shared/generation.ts';
-import { cleanArticleMarkdown } from '../_shared/markdown.ts';
+import { cleanArticleMarkdown, scribdPagesToText } from '../_shared/markdown.ts';
 import { QUOTE_MAX_CHARS, QUOTE_MAX_COUNT, verbatimQuotes } from '../_shared/quotes.ts';
 import { SCREENSHOT_BUCKET, screenshotPaths } from '../_shared/screenshots.ts';
 
@@ -828,7 +828,9 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
       // With Accept: application/json, Jina wraps the page in { code, status, data: {...} }.
       // Reading the fields off the envelope produced "Untitled" with an empty body.
       const page = envelope?.data && typeof envelope.data === 'object' ? envelope.data : envelope;
-      const markdown: string = page.content || page.text || '';
+      const raw: string = page.content || page.text || '';
+      // Scribd's only text is in its page images' alt text; keep it before images are stripped
+      const markdown = isScribd(url) ? scribdPagesToText(raw) : raw;
       // Jina returns Markdown; body_plain is shown and printed as plain text
       const article = cleanArticleMarkdown(markdown, page.title);
       if (article.text.trim().length > 0) {
@@ -900,6 +902,15 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
 }
 
 class BlockedPageError extends Error {}
+
+function isScribd(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'scribd.com' || host.endsWith('.scribd.com');
+  } catch {
+    return false;
+  }
+}
 
 function extractTweetId(url: string): string | null {
   const match = url.match(/status\/(\d+)/);

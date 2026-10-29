@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { bodyToBlocks, cleanArticleMarkdown, cleanInline, looksLikeMarkdown } from "./markdown.ts";
+import { bodyToBlocks, cleanArticleMarkdown, cleanInline, looksLikeMarkdown, scribdPagesToText } from "./markdown.ts";
 
 Deno.test("cleanInline drops images, keeps link text and footnote numbers", () => {
   assertEquals(
@@ -124,4 +124,85 @@ Deno.test("hostile lines are cleaned in linear time", () => {
     const elapsed = performance.now() - started;
     if (elapsed > 1000) throw new Error(`"${unit}" line took ${Math.round(elapsed)} ms`);
   }
+});
+
+Deno.test("images whose alt text spans lines are removed whole (Scribd pages)", () => {
+  const md = [
+    "# Vigyan Bhairava Tantra",
+    "",
+    "Intro line.",
+    "",
+    "![Image 2: VIJNANA BHAIRAVA ",
+    "Commentary by ",
+    "Swami Lakshman Joo ",
+    "](https://screenshots.scribd.com/Scribd/252_100_85/395/441070610/1.jpeg)",
+    "",
+    "![Image 4: Verses translated ",
+    "",
+    "Cover illustration](https://screenshots.scribd.com/Scribd/252_100_85/395/441070610/3.jpeg)",
+    "",
+    "Closing line.",
+  ].join("\n");
+  assertEquals(cleanArticleMarkdown(md, "Vigyan Bhairava Tantra").text, "Intro line.\n\nClosing line.");
+});
+
+Deno.test("Scribd page furniture and footer are removed", () => {
+  const md = [
+    "# Vigyan Bhairava Tantra",
+    "97%(39)97% found this document useful (39 votes)",
+    "",
+    "15K views 221 pages",
+    "",
+    "AI-enhanced title",
+    "",
+    "Full description",
+    "",
+    "Download",
+    "",
+    "You are on page 1",
+    "",
+    "221",
+    "",
+    "The text itself.",
+    "",
+    "adDownload to read ad-free",
+    "",
+    "ad",
+    "",
+    "## You might also like",
+    "",
+    "Other document",
+  ].join("\n");
+  assertEquals(cleanArticleMarkdown(md, "Vigyan Bhairava Tantra").text, "The text itself.");
+});
+
+Deno.test("image alt text with brackets inside is removed whole", () => {
+  assertEquals(
+    cleanInline("Before ![Image 44: Energy is mukham [the mouth of Siva]. More](https://screenshots.scribd.com/a/44.jpeg) after"),
+    "Before after",
+  );
+});
+
+Deno.test("image alt text cut off inside a bracket is removed whole", () => {
+  assertEquals(
+    cleanInline("A ![Image 127: 102 Vijnana Bhairava [The explanation which follows was given by Swami Ji, here he takes up the variant re](https://screenshots.scribd.com/a/126.jpeg) B"),
+    "A B",
+  );
+});
+
+Deno.test("Scribd page snippets become paragraphs, marked where Scribd cut them", () => {
+  const md = [
+    "# Vigyan Bhairava Tantra",
+    "",
+    "![Image 10: FOREWORD The guru's grace is spontaneous ",
+    "and unconditional.](https://screenshots.scribd.com/Scribd/252_100_85/395/441070610/9.jpeg)",
+    "",
+    "9",
+    "",
+    `![Image 11: ${"word ".repeat(26).trim()}](https://screenshots.scribd.com/Scribd/252_100_85/395/441070610/10.jpeg)`,
+  ].join("\n");
+  assertEquals(
+    cleanArticleMarkdown(scribdPagesToText(md), "Vigyan Bhairava Tantra").text,
+    `FOREWORD The guru's grace is spontaneous and unconditional.\n\n${"word ".repeat(26).trim()}…`,
+  );
 });

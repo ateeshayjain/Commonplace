@@ -26,7 +26,9 @@ const MAX_INPUT_CHARS = 300_000;
 
 // A link or image destination: allows one level of parentheses and an optional "title"
 const DEST = String.raw`\((?:[^()\s]|\([^()\s]{0,200}\)){0,2048}(?:\s+"[^"]{0,200}")?\)`;
-const IMAGE = new RegExp(String.raw`!\[[^\]]{0,500}\]` + DEST, 'g');
+// Alt text ends only at "](": Scribd puts each page's OCR there, cut at ~128
+// characters, so it can hold brackets, even an unclosed "[the entrance to"
+const IMAGE = new RegExp(String.raw`!\[(?:[^\]]|\](?!\()){0,600}\]` + DEST, 'g');
 const LINK = new RegExp(String.raw`\[([^\]]{0,500})\]` + DEST, 'g');
 
 // Lines that are page furniture, compared after inline cleanup, case-insensitively
@@ -35,6 +37,9 @@ const CHROME_LINES = new Set([
   'comments', 'restack', 'previous', 'next', 'listen', 'follow', 'see all', 'get app',
   'write', 'upgrade to paid', 'member-only story', 'top latest discussions',
   'press enter or click to view image in full size', 'remember me for faster sign in',
+  // Scribd
+  'ai-enhanced title', 'full description', 'download', 'share this document', 'ad', 'uploaded by',
+  'addownload to read ad-free', 'download to read ad-free',
 ]);
 
 // Page furniture that varies by article (reading time, Medium's sign-up box, checkboxes)
@@ -43,6 +48,10 @@ const CHROME_PATTERNS = [
   /^get .{1,120} stories in your inbox$/i,
   /^join medium for free\b/i,
   /^[-*+]?\s*\[[ x]\]$/i,
+  // Scribd: "97%(39)97% found this document useful (39 votes)", "15K views 221 pages", "You are on page 1"
+  /^\d{1,3}%.{0,40}found this document useful.{0,40}$/i,
+  /^[\d.,]+\s*[km]? views(?: \d+ pages?)?$/i,
+  /^you are on page \d+$/i,
 ];
 
 // Everything from one of these lines on is comments, related posts or the site footer
@@ -54,6 +63,9 @@ const END_MARKERS = [
   /^responses \(\d+\)$/i,
   /^recommended from medium$/i,
   /^more from .+ and .+$/i,
+  // Scribd
+  /^you might also like$/i,
+  /^footer menu$/i,
 ];
 
 // Only as a heading: Medium's author footer. A guest post may open with "Written by ..."
@@ -67,6 +79,24 @@ const SEPARATORS = /[∙•·|]/g;
 const BYLINE_JOINERS = /\b(?:and|by)\b|[,&]/gi;
 // Author profile links on Substack and Medium: substack.com/@jane, medium.com/@jane
 const PROFILE_LINK = /\]\(https?:\/\/[^)\s]{0,200}\/@[\w.-]{1,100}/;
+
+// A Scribd document page: its image, whose alt text is that page's OCR cut at ~128 characters
+const SCRIBD_PAGE = /!\[Image \d{1,4}: ((?:[^\]]|\](?!\()){0,600})\]\(https:\/\/screenshots\.scribd\.com\/[^)\s]{1,300}\)/g;
+const SCRIBD_SNIPPET_CUT = 120;
+
+/**
+ * Scribd shows readers who aren't signed in only page images, each with the
+ * first ~128 characters of the page as alt text. Those snippets are the only
+ * text there is, so they become paragraphs (marked "…" where cut) instead of
+ * being stripped with the other images.
+ */
+export function scribdPagesToText(md: string): string {
+  return md.slice(0, MAX_INPUT_CHARS).replace(SCRIBD_PAGE, (_, alt: string) => {
+    const text = alt.replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    return `\n\n${text}${text.length >= SCRIBD_SNIPPET_CUT ? '…' : ''}\n\n`;
+  });
+}
 
 /** True when text carries Markdown syntax worth cleaning (links, images, headings, emphasis). */
 export function looksLikeMarkdown(text: string): boolean {
@@ -118,7 +148,9 @@ export function markdownToBlocks(md: string, title?: string): ArticleBlock[] {
 }
 
 function parseArticle(md: string, title?: string): { blocks: ArticleBlock[]; byline?: string } {
-  let lines = md.slice(0, MAX_INPUT_CHARS).replace(/\r\n?/g, '\n').split('\n');
+  // Images first, over the whole text: their alt text can run across lines
+  // (Scribd puts each page's OCR there), which a line-by-line pass never sees whole
+  let lines = md.slice(0, MAX_INPUT_CHARS).replace(/\r\n?/g, '\n').replace(IMAGE, '').split('\n');
 
   // Drop the masthead: everything up to the heading that repeats the title
   if (title) {

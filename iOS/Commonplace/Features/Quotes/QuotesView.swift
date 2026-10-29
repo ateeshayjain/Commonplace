@@ -94,13 +94,7 @@ struct QuotesView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(alignment: .bottom, spacing: CPSpacing.xs) {
-                    SourceIcon(type: document.sourceType, size: 13)
-                        .padding(.bottom, 2)
-                    Text("\(quote.isVerbatim ? "\u{2014}" : "From") \(ShareableQuote.credit(for: document))")
-                        .font(.cpFootnote)
-                        .foregroundColor(.cpTextSecondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                    QuoteCreditView(document: document, isVerbatim: quote.isVerbatim)
                     Spacer(minLength: CPSpacing.sm)
                     actions(quote)
                 }

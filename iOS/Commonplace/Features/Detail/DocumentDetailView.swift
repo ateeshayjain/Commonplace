@@ -317,10 +317,7 @@ struct DocumentDetailView: View {
                 Spacer(minLength: 0)
 
                 HStack(alignment: .bottom) {
-                    Text("\(quote.isVerbatim ? "\u{2014}" : "From") \(ShareableQuote.credit(for: viewModel.document))")
-                        .font(.cpFootnote)
-                        .foregroundColor(.cpTextSecondary)
-                        .lineLimit(2)
+                    QuoteCreditView(document: viewModel.document, isVerbatim: quote.isVerbatim)
                     Spacer(minLength: CPSpacing.sm)
                     quoteActions(quote)
                 }

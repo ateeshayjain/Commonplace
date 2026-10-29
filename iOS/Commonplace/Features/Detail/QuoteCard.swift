@@ -25,19 +25,74 @@ struct ShareableQuote: Identifiable, Hashable {
         return quotes
     }
 
-    /// Authors who write in lowercase keep their style inside the line; only the
-    /// opening letter is capitalised, as when a quote starts a sentence in print
-    var displayText: String {
-        guard let first = text.first, first.isLowercase else { return text }
-        return first.uppercased() + text.dropFirst()
+    /// Sentence case for display: each sentence starts with a capital, and a
+    /// standalone "i" is "I". The stored line stays word for word as the author
+    /// wrote it (that is what the verbatim check compares); this only changes
+    /// how it reads on a card, as a quote would be set in print.
+    var displayText: String { Self.sentenceCased(text) }
+
+    /// Stops that end a word, not a sentence
+    private static let abbreviations: Set<String> = ["e.g.", "i.e.", "etc.", "vs.", "cf.", "mr.", "mrs.", "ms.", "dr.", "st."]
+
+    static func sentenceCased(_ text: String) -> String {
+        var result = ""
+        var word = ""                  // the current word, to spot abbreviations
+        var capitalizeNext = true      // start of the line, or after ". " "! " "? "
+        var afterTerminator = false    // just saw . ! ? and waiting for a space
+        for character in text {
+            if character.isWhitespace {
+                if afterTerminator && !abbreviations.contains(word.lowercased()) { capitalizeNext = true }
+                afterTerminator = false
+                word = ""
+                result.append(character)
+                continue
+            }
+            word.append(character)
+            if character.isLetter {
+                result += capitalizeNext ? character.uppercased() : String(character)
+                capitalizeNext = false
+                afterTerminator = false
+                continue
+            }
+            result.append(character)
+            if ".!?\u{2026}".contains(character) {
+                afterTerminator = true
+            } else if !"\"'\u{201C}\u{201D}\u{2018}\u{2019}()[]".contains(character) {
+                // "3.5", "e.g" and the like: a terminator not followed by a space
+                afterTerminator = false
+                capitalizeNext = false
+            }
+        }
+        return result.replacingOccurrences(
+            of: #"(?<![\p{L}'\u2019])i(?=\s|['\u2019](?:m|ve|ll|d)\b|[,!?;:]|\.(?!\w)|$)"#,
+            with: "I",
+            options: .regularExpression
+        )
     }
 
-    /// The credit under a quote: "Article title, Author, Source"
-    static func credit(for document: Document) -> String {
-        [document.title, document.authorName ?? document.authorHandle, sourceName(for: document)]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: ", ")
+    /// The credit under a quote, one part per line on the cards
+    struct Credit {
+        let title: String
+        let author: String?
+        let source: String?
+    }
+
+    static func credit(for document: Document) -> Credit {
+        func clean(_ value: String?) -> String? {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+            return value
+        }
+        return Credit(
+            title: document.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            author: clean(document.authorName) ?? clean(document.authorHandle),
+            source: clean(sourceName(for: document))
+        )
+    }
+
+    /// The credit on one line ("Title, Author, Source"), for search
+    static func creditLine(for document: Document) -> String {
+        let credit = Self.credit(for: document)
+        return [credit.title, credit.author, credit.source].compactMap { $0 }.joined(separator: ", ")
     }
 
     /// The platform's name, or the site's for plain articles ("stratechery.com", not "Article")
@@ -53,8 +108,11 @@ struct ShareableQuote: Identifiable, Hashable {
     /// Caption for the post: links on an image can't be tapped, so the source link
     /// travels here (pasted into the caption, or into a Stories link sticker)
     func caption(for document: Document) -> String {
-        var lines = [isVerbatim ? "\u{201C}\(displayText)\u{201D}" : displayText,
-                     "\u{2014} \(Self.credit(for: document))"]
+        let credit = Self.credit(for: document)
+        var lines = [isVerbatim ? "\u{201C}\(displayText)\u{201D}" : displayText, ""]
+        lines.append(isVerbatim ? "\u{2014} \(credit.title)" : "From \(credit.title)")
+        if let author = credit.author { lines.append(author) }
+        if let source = credit.source { lines.append(source) }
         if let url = document.sourceUrl {
             lines.append("")
             lines.append("Read it: \(url)")
@@ -150,19 +208,95 @@ struct QuoteCardView: View {
         }
     }
 
-    /// "— Article title, Author, Source"; the link goes in the caption instead
+    /// Title, author and source on their own lines; the link goes in the caption instead
     private var attribution: some View {
         VStack(alignment: .leading, spacing: CPSpacing.xs) {
             Rectangle()
                 .fill(ribbon)
                 .frame(width: 32, height: 3)
 
-            Text("\(quote.isVerbatim ? "\u{2014}" : "From") \(ShareableQuote.credit(for: document))")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.cpBrandCream.opacity(0.85))
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+            QuoteCreditView(
+                document: document,
+                isVerbatim: quote.isVerbatim,
+                titleFont: .system(size: 14, weight: .semibold),
+                detailFont: .system(size: 13),
+                primary: .cpBrandCream,
+                secondary: .cpBrandCream.opacity(0.7),
+                iconTint: .cpBrandCream.opacity(0.8),
+                titleLineLimit: 3
+            )
         }
+    }
+}
+
+// MARK: - Credit
+
+/// "— Article title" / author / [logo] source, each on its own line. Shared by
+/// the share image, the detail page's quote cards and the Quotes tab.
+struct QuoteCreditView: View {
+    let document: Document
+    let isVerbatim: Bool
+    var titleFont: Font = .cpFootnote.weight(.semibold)
+    var detailFont: Font = .cpFootnote
+    var primary: Color = .cpText
+    var secondary: Color = .cpTextSecondary
+    /// nil keeps the platform's own colour
+    var iconTint: Color?
+    var titleLineLimit = 2
+
+    var body: some View {
+        let credit = ShareableQuote.credit(for: document)
+
+        VStack(alignment: .leading, spacing: 3) {
+            // The key idea is Sangrah's line, so it is "from" the piece, not quoted from it
+            Text(isVerbatim ? "\u{2014} \(credit.title)" : "From \(credit.title)")
+                .font(titleFont)
+                .foregroundColor(primary)
+                .lineLimit(titleLineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let author = credit.author {
+                Text(author)
+                    .font(detailFont)
+                    .foregroundColor(secondary)
+                    .lineLimit(1)
+            }
+
+            if let source = credit.source {
+                HStack(spacing: 5) {
+                    SourceIcon(type: document.sourceType, size: 13, tint: iconTint)
+                    Text(source)
+                        .font(detailFont)
+                        .foregroundColor(secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .multilineTextAlignment(.leading)
+    }
+}
+
+/// The caption for apps that take text with an image (WhatsApp, Messages, Mail):
+/// it travels with the picture. Left out where it gets in the way: Instagram
+/// (which ignores it; the caption is on the clipboard), Save Image and Copy.
+final class QuoteCaptionItem: NSObject, UIActivityItemSource {
+    let caption: String
+
+    init(_ caption: String) {
+        self.caption = caption
+    }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any {
+        caption
+    }
+
+    func activityViewController(_ controller: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        guard let type = activityType?.rawValue else { return caption }
+        let imageOnly: Set<UIActivity.ActivityType> = [.saveToCameraRoll, .copyToPasteboard, .assignToContact, .print, .airDrop]
+        if imageOnly.contains(UIActivity.ActivityType(type)) || type.localizedCaseInsensitiveContains("instagram") {
+            return nil
+        }
+        return caption
     }
 }
 
@@ -181,6 +315,7 @@ struct QuoteShareSheet: View {
 
     struct SharedImage: Identifiable {
         let image: UIImage
+        let caption: String
         let id = UUID()
     }
 
@@ -211,11 +346,11 @@ struct QuoteShareSheet: View {
                             // Only the image goes to the share sheet (Instagram's extension
                             // takes images); the caption with the link waits on the clipboard
                             UIPasteboard.general.string = quote.caption(for: document)
-                            shareItem = SharedImage(image: image)
+                            shareItem = SharedImage(image: image, caption: quote.caption(for: document))
                         }
                     }
 
-                    Label("Caption with the source link is copied when you share. Paste it into your post or a link sticker.", systemImage: "doc.on.clipboard")
+                    Label("WhatsApp and Messages get the caption with the source link. For Instagram it's on your clipboard: paste it into the post or a link sticker.", systemImage: "doc.on.clipboard")
                         .font(.cpFootnote)
                         .foregroundColor(.cpTextSecondary)
                         .multilineTextAlignment(.center)
@@ -230,7 +365,7 @@ struct QuoteShareSheet: View {
                 }
             }
             .sheet(item: $shareItem) { item in
-                ActivityView(items: [item.image])
+                ActivityView(items: [item.image, QuoteCaptionItem(item.caption)])
                     .presentationDetents([.medium, .large])
                     .ignoresSafeArea()
             }
