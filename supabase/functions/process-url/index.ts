@@ -8,6 +8,7 @@ import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
 import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT } from '../_shared/generation.ts';
 import { cleanArticleMarkdown } from '../_shared/markdown.ts';
 import { QUOTE_MAX_CHARS, QUOTE_MAX_COUNT, verbatimQuotes } from '../_shared/quotes.ts';
+import { SCREENSHOT_BUCKET, screenshotPaths } from '../_shared/screenshots.ts';
 
 // Supabase Edge Runtime: keeps background work alive after the response is sent
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -18,8 +19,10 @@ const corsHeaders = {
 };
 
 interface ProcessURLRequest {
-  url: string;
+  url?: string;
   categories?: string[];
+  // Storage paths of screenshots shared from Photos, in order; sent instead of url
+  screenshots?: string[];
 }
 
 interface ExtractedContent {
@@ -70,7 +73,11 @@ serve(async (req) => {
     }
 
     // Parse request
-    const { url, categories = [] }: ProcessURLRequest = await req.json();
+    const { url, categories = [], screenshots }: ProcessURLRequest = await req.json();
+
+    if (screenshots !== undefined) {
+      return await saveScreenshots(supabase, user.id, screenshots, categories);
+    }
 
     if (!url) {
       throw new Error('URL is required');
@@ -201,29 +208,7 @@ async function processContent(
         .eq('id', documentId);
     }
 
-    // Update with AI enrichment (PRD: hook / executiveSummary / keyTakeaways)
-    await supabase
-      .from('documents')
-      .update({
-        ai_hook: aiEnrichment.hook,
-        ai_summary_short: aiEnrichment.summaryShort,
-        ai_summary_long: aiEnrichment.executiveSummary,
-        ai_key_points: aiEnrichment.keyTakeaways,
-        ai_quotable_lines: aiEnrichment.quotableLines,
-        ai_categories: aiEnrichment.categories,
-        ai_topics: aiEnrichment.tags, // kept for the current UI until tags are shown
-        ai_complexity_score: aiEnrichment.complexityScore,
-        ai_reading_level: aiEnrichment.readingLevel,
-        // The Library filters, rows and detail read user_categories; when the
-        // save did not name any, the AI's picks become the starting point
-        // (the user can still edit them).
-        ...(autoCategorise ? { user_categories: aiEnrichment.categories } : {}),
-        processing_status: 'completed',
-        processed_at: new Date().toISOString(),
-      })
-      .eq('id', documentId);
-
-    await attachTags(supabase, userId, documentId, aiEnrichment.tags);
+    await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
 
   } catch (error) {
     console.error('Processing error:', error);
@@ -235,6 +220,150 @@ async function processContent(
       })
       .eq('id', documentId);
   }
+}
+
+// Update with AI enrichment (PRD: hook / executiveSummary / keyTakeaways)
+async function saveEnrichment(
+  supabase: any,
+  userId: string,
+  documentId: string,
+  aiEnrichment: Enrichment,
+  autoCategorise: boolean
+) {
+  await supabase
+    .from('documents')
+    .update({
+      ai_hook: aiEnrichment.hook,
+      ai_summary_short: aiEnrichment.summaryShort,
+      ai_summary_long: aiEnrichment.executiveSummary,
+      ai_key_points: aiEnrichment.keyTakeaways,
+      ai_quotable_lines: aiEnrichment.quotableLines,
+      ai_categories: aiEnrichment.categories,
+      ai_topics: aiEnrichment.tags, // kept for the current UI until tags are shown
+      ai_complexity_score: aiEnrichment.complexityScore,
+      ai_reading_level: aiEnrichment.readingLevel,
+      // The Library filters, rows and detail read user_categories; when the
+      // save did not name any, the AI's picks become the starting point
+      // (the user can still edit them).
+      ...(autoCategorise ? { user_categories: aiEnrichment.categories } : {}),
+      processing_status: 'completed',
+      processed_at: new Date().toISOString(),
+    })
+    .eq('id', documentId);
+
+  await attachTags(supabase, userId, documentId, aiEnrichment.tags);
+}
+
+// MARK: Screenshots
+
+// A save made of screenshots (e.g. five screenshots of one article): the
+// images are read together, in order, into one article
+async function saveScreenshots(supabase: any, userId: string, input: unknown, categories: string[]): Promise<Response> {
+  const paths = screenshotPaths(input, userId);
+  if (!paths) {
+    throw new Error('Invalid screenshots');
+  }
+
+  const { data: document, error: insertError } = await supabase
+    .from('documents')
+    .insert({
+      user_id: userId,
+      source_type: 'screenshot',
+      title: 'Reading screenshots...',
+      body_plain: '',
+      processing_status: 'fetching',
+      user_categories: categories,
+      metadata: { screenshotPaths: paths, imageCount: paths.length },
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    throw insertError;
+  }
+
+  const processing = processScreenshots(supabase, userId, document.id, paths, categories.length === 0);
+  if (typeof EdgeRuntime !== 'undefined') {
+    EdgeRuntime.waitUntil(processing);
+  }
+
+  return new Response(
+    JSON.stringify({ id: document.id, status: 'processing', message: 'Screenshots queued for processing' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+  );
+}
+
+async function processScreenshots(
+  supabase: any,
+  userId: string,
+  documentId: string,
+  paths: string[],
+  autoCategorise: boolean
+) {
+  try {
+    await supabase
+      .from('documents')
+      .update({ processing_status: 'extracting' })
+      .eq('id', documentId);
+
+    const images = await downloadScreenshots(supabase, paths);
+    if (images.length === 0) {
+      throw new Error('The screenshots could not be read');
+    }
+
+    const existingTags = await fetchRecentTagNames(supabase, userId);
+    const aiEnrichment = await generateAIEnrichment('', '', existingTags, images, 'screenshots');
+    const body = aiEnrichment.transcribedText ?? '';
+    if (!body) {
+      throw new Error('No text was found in the screenshots');
+    }
+
+    const words = body.split(/\s+/).length;
+    await supabase
+      .from('documents')
+      .update({
+        title: aiEnrichment.title || 'Saved screenshots',
+        author_name: aiEnrichment.authorName || null,
+        source_domain: aiEnrichment.sourceName || null,
+        body_plain: body,
+        word_count: words,
+        reading_time_minutes: Math.ceil(words / 200),
+        processing_status: 'enriching',
+      })
+      .eq('id', documentId);
+
+    await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
+  } catch (error) {
+    console.error('Screenshot processing error:', error);
+    await supabase
+      .from('documents')
+      .update({
+        title: 'Saved screenshots',
+        processing_status: 'failed',
+        processing_error: (error as Error).message,
+      })
+      .eq('id', documentId);
+  }
+}
+
+// Paths were checked by screenshotPaths: the caller's folder only
+async function downloadScreenshots(supabase: any, paths: string[]): Promise<ImageInput[]> {
+  const images: ImageInput[] = [];
+  for (const path of paths) {
+    const { data, error } = await supabase.storage.from(SCREENSHOT_BUCKET).download(path);
+    if (error || !data) {
+      console.log(`Screenshot download failed (${path}):`, error);
+      continue;
+    }
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    images.push({ mediaType: 'image/jpeg', data: btoa(binary) });
+  }
+  console.log(`Downloaded ${images.length}/${paths.length} screenshots`);
+  return images;
 }
 
 // Anthropic fetches image URLs itself and honours robots.txt, which Instagram's
@@ -794,6 +923,10 @@ interface Enrichment {
   complexityScore: number;   // 1-10
   readingLevel: 'casual' | 'intermediate' | 'advanced' | 'expert';
   transcribedText?: string;  // text read from supplied images, empty when none
+  // Screenshot saves only: what the screenshots show of the piece itself
+  title?: string;
+  authorName?: string;
+  sourceName?: string;
 }
 
 const CATEGORIES = ['Technology', 'Business', 'Health', 'Science', 'Culture', 'Politics', 'Design', 'Personal Dev'];
@@ -817,6 +950,18 @@ const ENRICHMENT_SCHEMA = {
   },
 };
 
+// Screenshots carry no page metadata, so Claude also reads the headline, author and source
+const SCREENSHOT_SCHEMA = {
+  ...ENRICHMENT_SCHEMA,
+  required: [...ENRICHMENT_SCHEMA.required, 'title', 'authorName', 'sourceName'],
+  properties: {
+    ...ENRICHMENT_SCHEMA.properties,
+    title: { type: 'string' },
+    authorName: { type: 'string' },
+    sourceName: { type: 'string' },
+  },
+};
+
 function fallbackEnrichment(content: string): Enrichment {
   return {
     hook: content.substring(0, HOOK_MAX_CHARS),
@@ -834,7 +979,30 @@ function fallbackEnrichment(content: string): Enrichment {
 
 const STATUS_TAGS = /^(missing content|needs review|shortened url|twitter link|no content|untitled)$/i;
 
-async function generateAIEnrichment(title: string, content: string, existingTags: string[], images: ImageInput[] = []): Promise<Enrichment> {
+// Images are either a post's slides (Instagram) next to its caption, or
+// screenshots that are the whole content
+type ImageKind = 'slides' | 'screenshots';
+
+function imageInstructions(images: ImageInput[], kind: ImageKind): string {
+  if (!images.length) return 'transcribedText: return an empty string.';
+  if (kind === 'slides') {
+    return `The ${images.length} image(s) above are the post's slides; their text IS the content. Transcribe them faithfully, in order, into transcribedText (plain text, slide breaks as blank lines) and base everything below on caption plus slides.`;
+  }
+  return `The ${images.length} image(s) above are screenshots of ONE piece (an article, thread or post), in the order they were taken; their text IS the content.
+- transcribedText: the piece's main text, transcribed faithfully and in order as plain text, paragraphs separated by blank lines. Keep the author's wording, spelling and capitalisation. Leave out phone and app chrome: status bar, menus, buttons, like/view/reply counts, ads, and comments under the piece. Screenshots usually overlap: text that appears at the bottom of one and the top of the next is written once.
+- title: the piece's headline as shown; if it has none, a short descriptive title (under 80 characters).
+- authorName: the author's name as shown; an empty string if none is visible.
+- sourceName: the publication, site or app as shown (e.g. "Substack", "The Atlantic", "LinkedIn"); an empty string if none is visible.
+Base everything below on the transcribed text.`;
+}
+
+async function generateAIEnrichment(
+  title: string,
+  content: string,
+  existingTags: string[],
+  images: ImageInput[] = [],
+  kind: ImageKind = 'slides'
+): Promise<Enrichment> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
@@ -845,17 +1013,20 @@ async function generateAIEnrichment(title: string, content: string, existingTags
   try {
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
+    const fromScreenshots = kind === 'screenshots' && images.length > 0;
     const result = await generateJSON<Enrichment>(anthropic, {
       model: CLAUDE_MODELS.standard,
       effort: 'low',
-      schema: ENRICHMENT_SCHEMA,
+      schema: fromScreenshots ? SCREENSHOT_SCHEMA : ENRICHMENT_SCHEMA,
       images,
+      // A long article's transcription comes on top of the summary fields
+      maxTokens: fromScreenshots ? 20000 : undefined,
       prompt: `Analyze this content for a personal knowledge library.
-${images.length ? `The ${images.length} image(s) above are the post's slides; their text IS the content. Transcribe them faithfully, in order, into transcribedText (plain text, slide breaks as blank lines) and base everything below on caption plus slides.` : 'transcribedText: return an empty string.'}
-
+${imageInstructions(images, kind)}
+${fromScreenshots ? '' : `
 Title: ${title}
 Content: ${content.substring(0, 10000)}
-
+`}
 Produce:
 - hook: ONE sentence, max ${HOOK_MAX_CHARS} characters, the single most striking idea. No preamble.
 - summaryShort: 2-3 sentences on the main insight.
@@ -883,6 +1054,9 @@ Write in the language of the content.`,
       complexityScore: Math.min(10, Math.max(1, Math.round(result.complexityScore))),
       readingLevel: result.readingLevel,
       transcribedText: (result.transcribedText ?? '').trim(),
+      title: result.title?.trim().substring(0, 200),
+      authorName: result.authorName?.trim().substring(0, 120),
+      sourceName: result.sourceName?.trim().substring(0, 120),
     };
   } catch (e) {
     console.error('AI enrichment failed:', e);

@@ -44,6 +44,8 @@ struct ShareableQuote: Identifiable, Hashable {
     static func sourceName(for document: Document) -> String? {
         switch document.sourceType {
         case .article, .unknown, .manual: return document.sourceDomain?.replacingOccurrences(of: "www.", with: "")
+        // Read off the screenshots by Claude ("Substack", "The Atlantic"), when visible
+        case .screenshot: return document.sourceDomain ?? document.sourceType.displayName
         default: return document.sourceType.displayName
         }
     }

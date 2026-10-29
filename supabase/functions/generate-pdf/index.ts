@@ -515,6 +515,8 @@ function getSourceLabel(sourceType: string): string {
     threads: 'Threads',
     podcast: 'Podcast',
     pdf: 'PDF',
+    screenshot: 'Screenshots',
+    book_ocr: 'Book',
   };
   return labels[sourceType] || 'Saved';
 }
