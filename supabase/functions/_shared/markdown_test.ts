@@ -52,6 +52,29 @@ Deno.test("Substack masthead, byline, counts and comments are removed", () => {
     "• one\n• two",
   ].join("\n\n"));
   assertEquals(result.headings, ["The subtitle", "1. A section"]);
+  assertEquals(result.byline, "Jane Doe");
+});
+
+Deno.test("a co-authored Substack byline becomes the author, not body text", () => {
+  const md = [
+    "# The Title",
+    "### The subtitle",
+    "[![Image 4: A's avatar](https://substackcdn.com/a.jpeg)](https://substack.com/@clubx)[![Image 5: B's avatar](https://substackcdn.com/b.png)](https://substack.com/@readyourself)",
+    "",
+    "[Thee Book Club](https://substack.com/@clubx) and [LN James](https://substack.com/@readyourself)",
+    "",
+    "Oct 23, 2026",
+    "",
+    "Hello,",
+  ].join("\n");
+  const result = cleanArticleMarkdown(md, "The Title");
+  assertEquals(result.byline, "Thee Book Club and LN James");
+  assertEquals(result.text, "The subtitle\n\nHello,");
+});
+
+Deno.test("profile links inside the body are not taken as the byline", () => {
+  const md = "# T\n\nFirst paragraph.\n\n[Jane Doe](https://substack.com/@jane)\n\nMore.";
+  assertEquals(cleanArticleMarkdown(md, "T").byline, undefined);
 });
 
 Deno.test("Medium reading time, sign-up box and author footer are removed", () => {

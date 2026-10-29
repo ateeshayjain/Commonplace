@@ -7,6 +7,7 @@ import { Anthropic, CLAUDE_MODELS, generateJSON, type ImageInput } from '../_sha
 import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
 import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT } from '../_shared/generation.ts';
 import { cleanArticleMarkdown } from '../_shared/markdown.ts';
+import { QUOTE_MAX_CHARS, QUOTE_MAX_COUNT, verbatimQuotes } from '../_shared/quotes.ts';
 
 // Supabase Edge Runtime: keeps background work alive after the response is sent
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -208,6 +209,7 @@ async function processContent(
         ai_summary_short: aiEnrichment.summaryShort,
         ai_summary_long: aiEnrichment.executiveSummary,
         ai_key_points: aiEnrichment.keyTakeaways,
+        ai_quotable_lines: aiEnrichment.quotableLines,
         ai_categories: aiEnrichment.categories,
         ai_topics: aiEnrichment.tags, // kept for the current UI until tags are shown
         ai_complexity_score: aiEnrichment.complexityScore,
@@ -706,7 +708,9 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
           title: page.title || 'Untitled',
           subtitle: page.description,
           bodyPlain: article.text,
-          authorName: page.author,
+          // Jina puts the page's <meta name="author"> under metadata; the byline
+          // names every co-author, so it wins when the page has one
+          authorName: article.byline ?? page.metadata?.author ?? page.author,
           publishedAt: page.publishedTime,
           metadata: article.headings.length ? { headings: article.headings } : undefined,
         };
@@ -784,6 +788,7 @@ interface Enrichment {
   summaryShort: string;      // 2-3 sentences
   executiveSummary: string;  // markdown bullet list
   keyTakeaways: string[];    // exactly KEY_TAKEAWAY_COUNT
+  quotableLines: string[];   // verbatim from the content, for share cards; may be empty
   tags: string[];            // 3-6, deduplicated downstream by slug
   categories: string[];
   complexityScore: number;   // 1-10
@@ -797,13 +802,14 @@ const CATEGORIES = ['Technology', 'Business', 'Health', 'Science', 'Culture', 'P
 const ENRICHMENT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['hook', 'summaryShort', 'executiveSummary', 'keyTakeaways', 'tags', 'categories', 'complexityScore', 'readingLevel', 'transcribedText'],
+  required: ['hook', 'summaryShort', 'executiveSummary', 'keyTakeaways', 'quotableLines', 'tags', 'categories', 'complexityScore', 'readingLevel', 'transcribedText'],
   properties: {
     transcribedText: { type: 'string' },
     hook: { type: 'string' },
     summaryShort: { type: 'string' },
     executiveSummary: { type: 'string' },
     keyTakeaways: { type: 'array', items: { type: 'string' } },
+    quotableLines: { type: 'array', items: { type: 'string' } },
     tags: { type: 'array', items: { type: 'string' } },
     categories: { type: 'array', items: { type: 'string', enum: CATEGORIES } },
     complexityScore: { type: 'integer' },
@@ -817,6 +823,7 @@ function fallbackEnrichment(content: string): Enrichment {
     summaryShort: content.substring(0, 200) + '...',
     executiveSummary: content.substring(0, 500),
     keyTakeaways: [],
+    quotableLines: [],
     tags: [],
     categories: [],
     complexityScore: 5,
@@ -854,6 +861,7 @@ Produce:
 - summaryShort: 2-3 sentences on the main insight.
 - executiveSummary: a markdown bullet list (5-8 bullets) of the arguments, key figures and practical implications.
 - keyTakeaways: exactly ${KEY_TAKEAWAY_COUNT} actionable takeaways, each one sentence.
+- quotableLines: 2-${QUOTE_MAX_COUNT} of the most striking lines, each copied WORD FOR WORD from the content (they are shared as quotes credited to the author, so never paraphrase, shorten or merge sentences). Each under ${QUOTE_MAX_CHARS} characters. Return an empty list if the content has no such lines.
 - tags: 3-6 short topical tags (1-3 words each, Title Case, no # symbol). Specific over generic: "Transformer Models" not "AI". Tags describe the subject only; never add status labels such as "Missing Content" or "Needs Review". If the content is thin, summarize what is there without commenting on what is missing.
 ${existingTags.length ? `  Reuse these existing tags when they fit, spelled exactly as given: ${existingTags.join(', ')}` : ''}
 - categories: 1-2 from: ${CATEGORIES.join(', ')}.
@@ -868,6 +876,8 @@ Write in the language of the content.`,
       summaryShort: result.summaryShort.trim(),
       executiveSummary: result.executiveSummary.trim(),
       keyTakeaways: result.keyTakeaways.slice(0, KEY_TAKEAWAY_COUNT),
+      // Slide text counts as content: Instagram quotes often live in the slides
+      quotableLines: verbatimQuotes(result.quotableLines ?? [], `${content}\n${result.transcribedText ?? ''}`),
       tags: result.tags.filter((tag) => !STATUS_TAGS.test(tag.trim())),
       categories: result.categories.filter((c) => CATEGORIES.includes(c)),
       complexityScore: Math.min(10, Math.max(1, Math.round(result.complexityScore))),

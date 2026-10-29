@@ -15,6 +15,8 @@ export interface CleanedArticle {
   text: string;
   /** Section headings, in order; stored in documents.metadata.headings so PDFs can bold them. */
   headings: string[];
+  /** The byline above the body ("Jane Doe and John Roe"), when the page links its authors' profiles */
+  byline?: string;
 }
 
 // Page text is untrusted: every open-ended span below has an upper bound so a
@@ -61,6 +63,10 @@ const MONTH = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*';
 const DATE_LINE = new RegExp(`^${MONTH}\\.? \\d{1,2}(?:, \\d{4})?$`, 'i');
 const COUNT_LINE = /^[\d.,]+\s*[km]?$/i;
 const SEPARATORS = /[∙•·|]/g;
+// What may sit between the links of a byline: "[A](…) and [B](…)", "[A](…), [B](…) & [C](…)"
+const BYLINE_JOINERS = /\b(?:and|by)\b|[,&]/gi;
+// Author profile links on Substack and Medium: substack.com/@jane, medium.com/@jane
+const PROFILE_LINK = /\]\(https?:\/\/[^)\s]{0,200}\/@[\w.-]{1,100}/;
 
 /** True when text carries Markdown syntax worth cleaning (links, images, headings, emphasis). */
 export function looksLikeMarkdown(text: string): boolean {
@@ -99,12 +105,19 @@ function isChrome(raw: string, cleaned: string): boolean {
   if (/^\d[\d,.]*[km]? (likes?|restacks?|comments?|claps?)$/i.test(bare)) return true;
   if (/^©/.test(bare) || /^already have an account\?/i.test(bare)) return true;
   // A line made only of links (bylines, nav, share buttons) carries no prose
-  const withoutLinks = raw.replace(IMAGE, '').replace(LINK, '').replace(SEPARATORS, '').trim();
-  return /\]\(/.test(raw) && withoutLinks === '';
+  return /\]\(/.test(raw) && linksOnly(raw);
+}
+
+function linksOnly(raw: string): boolean {
+  return raw.replace(IMAGE, '').replace(LINK, '').replace(SEPARATORS, '').replace(BYLINE_JOINERS, '').trim() === '';
 }
 
 /** Parse article Markdown into blocks, dropping page chrome. */
 export function markdownToBlocks(md: string, title?: string): ArticleBlock[] {
+  return parseArticle(md, title).blocks;
+}
+
+function parseArticle(md: string, title?: string): { blocks: ArticleBlock[]; byline?: string } {
   let lines = md.slice(0, MAX_INPUT_CHARS).replace(/\r\n?/g, '\n').split('\n');
 
   // Drop the masthead: everything up to the heading that repeats the title
@@ -119,6 +132,7 @@ export function markdownToBlocks(md: string, title?: string): ArticleBlock[] {
   let quote: string[] = [];
   let list: string[] = [];
   let inFence = false;
+  let byline: string | undefined;
 
   const flush = () => {
     if (paragraph.length) blocks.push({ kind: 'paragraph', text: paragraph.join(' ') });
@@ -158,6 +172,13 @@ export function markdownToBlocks(md: string, title?: string): ArticleBlock[] {
 
     const cleaned = cleanInline(trimmed.startsWith('|') ? trimmed.replace(/^\||\|$/g, '').replace(/\|/g, ' | ') : trimmed);
     if (END_MARKERS.some((re) => re.test(cleaned))) break;
+
+    // The first line of author profile links above the body is the byline
+    const beforeBody = !paragraph.length && !list.length && !quote.length && blocks.every((b) => b.kind === 'heading');
+    if (!byline && beforeBody && PROFILE_LINK.test(trimmed) && linksOnly(trimmed) && cleaned.length <= 200) {
+      byline = cleaned.replace(SEPARATORS, ' ').replace(/\s+/g, ' ').replace(/^by\s+/i, '').trim() || undefined;
+      continue;
+    }
     if (isChrome(trimmed, cleaned)) continue;
 
     const item = trimmed.match(/^(?:[-*+]|(\d+)[.)])\s+/);
@@ -172,15 +193,16 @@ export function markdownToBlocks(md: string, title?: string): ArticleBlock[] {
     paragraph.push(cleaned);
   }
   flush();
-  return blocks;
+  return { blocks, byline };
 }
 
 /** Clean article Markdown into the plain text stored in body_plain, plus its headings. */
 export function cleanArticleMarkdown(md: string, title?: string): CleanedArticle {
-  const blocks = markdownToBlocks(md, title);
+  const { blocks, byline } = parseArticle(md, title);
   return {
     text: blocks.map((b) => b.text).join('\n\n'),
     headings: blocks.filter((b) => b.kind === 'heading').map((b) => b.text),
+    byline,
   };
 }
 

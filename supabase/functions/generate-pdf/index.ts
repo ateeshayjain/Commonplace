@@ -3,13 +3,21 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { PDFDocument, StandardFonts, rgb, PageSizes } from "https://esm.sh/pdf-lib@1.17.1";
+import {
+  PDFDocument, StandardFonts, rgb, PageSizes,
+  pushGraphicsState, popGraphicsState, moveTo, lineTo, appendBezierCurve, closePath, clip, endPath,
+} from "https://esm.sh/pdf-lib@1.17.1";
 import { bodyToBlocks } from '../_shared/markdown.ts';
+import { BRAND_NAME, BRAND_NAVY, brandIconBytes } from '../_shared/brand.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Bump when the layout changes; the app regenerates stored PDFs older than its
+// DocumentService.pdfLayoutVersion. 2: Sangrah header and per-page footer
+const PDF_LAYOUT_VERSION = 2;
 
 interface GeneratePDFRequest {
   documentId: string;
@@ -85,7 +93,7 @@ serve(async (req) => {
     // Update document with PDF URL
     await supabase
       .from('documents')
-      .update({ pdf_url: urlData.publicUrl })
+      .update({ pdf_url: urlData.publicUrl, pdf_version: PDF_LAYOUT_VERSION })
       .eq('id', documentId);
 
     return new Response(
@@ -224,7 +232,27 @@ async function generateArticlePDF(input: any): Promise<Uint8Array> {
     }
   }
 
-  // === HEADER: Source & Date ===
+  // === HEADER: Sangrah mark, then source & date ===
+  const brandIcon = await pdfDoc.embedPng(brandIconBytes());
+  const iconSize = 22;
+  drawRoundedImage(page, brandIcon, margin, yPosition - iconSize + 8, iconSize, 5);
+  page.drawText(BRAND_NAME, {
+    x: margin + iconSize + 8,
+    y: yPosition - 7,
+    font: helveticaBold,
+    size: 14,
+    color: rgb(BRAND_NAVY.r, BRAND_NAVY.g, BRAND_NAVY.b),
+  });
+
+  yPosition -= iconSize + 6;
+  page.drawLine({
+    start: { x: margin, y: yPosition },
+    end: { x: pageWidth - margin, y: yPosition },
+    thickness: 0.5,
+    color: rgb(0.85, 0.85, 0.85),
+  });
+  yPosition -= 18;
+
   const sourceText = `${getSourceLabel(document.source_type)} · ${document.source_domain || document.source_type}`;
   const dateText = formatDate(document.created_at);
 
@@ -408,24 +436,63 @@ async function generateArticlePDF(input: any): Promise<Uint8Array> {
     }
   }
 
-  // === FOOTER (on last page) ===
-  yPosition = margin - 20;
-  let footerText = `Saved with Sangrah • ${document.source_url || ''}`;
-  while (footerText.length > 20 && helvetica.widthOfTextAtSize(footerText, 8) > contentWidth) {
+  // === FOOTER (every page): Sangrah mark and source left, page number right ===
+  const pages = pdfDoc.getPages();
+  const pageLabelWidth = helvetica.widthOfTextAtSize(`${pages.length} / ${pages.length}`, 8);
+  const footerTextX = margin + 14;
+  const footerMaxWidth = pageWidth - margin - pageLabelWidth - 16 - footerTextX;
+  let footerText = `Saved with ${BRAND_NAME}${document.source_url ? ` • ${safe(document.source_url)}` : ''}`;
+  while (footerText.length > 20 && helvetica.widthOfTextAtSize(footerText, 8) > footerMaxWidth) {
     footerText = footerText.slice(0, -2) + '…';
     footerText = footerText.replace(/……$/, '…');
   }
-  const footerWidth = helvetica.widthOfTextAtSize(footerText, 8);
 
-  page.drawText(footerText, {
-    x: (pageWidth - footerWidth) / 2,
-    y: 30,
-    font: helvetica,
-    size: 8,
-    color: rgb(0.6, 0.6, 0.6),
+  pages.forEach((p, index) => {
+    drawRoundedImage(p, brandIcon, margin, 28, 10, 2.5);
+    p.drawText(footerText, {
+      x: footerTextX,
+      y: 30,
+      font: helvetica,
+      size: 8,
+      color: rgb(0.6, 0.6, 0.6),
+    });
+    const pageLabel = `${index + 1} / ${pages.length}`;
+    p.drawText(pageLabel, {
+      x: pageWidth - margin - helvetica.widthOfTextAtSize(pageLabel, 8),
+      y: 30,
+      font: helvetica,
+      size: 8,
+      color: rgb(0.6, 0.6, 0.6),
+    });
   });
 
   return await pdfDoc.save();
+}
+
+// The icon with rounded corners, like it appears on the home screen: clip to a
+// rounded square, draw, restore. (x, y) is the bottom-left corner.
+// deno-lint-ignore no-explicit-any
+function drawRoundedImage(page: any, image: any, x: number, y: number, size: number, radius: number): void {
+  const k = 0.5523 * radius; // Bezier handle length for a quarter circle
+  const right = x + size;
+  const top = y + size;
+  page.pushOperators(
+    pushGraphicsState(),
+    moveTo(x + radius, y),
+    lineTo(right - radius, y),
+    appendBezierCurve(right - radius + k, y, right, y + radius - k, right, y + radius),
+    lineTo(right, top - radius),
+    appendBezierCurve(right, top - radius + k, right - radius + k, top, right - radius, top),
+    lineTo(x + radius, top),
+    appendBezierCurve(x + radius - k, top, x, top - radius + k, x, top - radius),
+    lineTo(x, y + radius),
+    appendBezierCurve(x, y + radius - k, x + radius - k, y, x + radius, y),
+    closePath(),
+    clip(),
+    endPath(),
+  );
+  page.drawImage(image, { x, y, width: size, height: size });
+  page.pushOperators(popGraphicsState());
 }
 
 // Plain-text labels: the standard PDF fonts cannot draw emoji
