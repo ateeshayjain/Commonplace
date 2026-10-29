@@ -178,7 +178,7 @@ class DocumentService {
     /// or the stored copy can't be downloaded.
     /// Matches PDF_LAYOUT_VERSION in generate-pdf: a stored PDF from an older
     /// layout (before the Sangrah header, say) is made again instead of reused
-    static let pdfLayoutVersion = 2
+    static let pdfLayoutVersion = 3
 
     func pdfFile(for document: Document) async throws -> URL {
         if let stored = document.pdfUrl, stored.hasPrefix("https://"), let url = URL(string: stored),

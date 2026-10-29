@@ -129,14 +129,27 @@ class LibraryViewModel: ObservableObject {
             result = result.filter { $0.sourceType == source }
         }
         if !searchQuery.isEmpty {
-            let lowercased = searchQuery.lowercased()
+            let query = searchQuery
             result = result.filter { document in
-                document.title.lowercased().contains(lowercased) ||
-                document.authorName?.lowercased().contains(lowercased) == true ||
-                document.aiSummaryShort?.lowercased().contains(lowercased) == true ||
-                document.userCategories.contains { $0.lowercased().contains(lowercased) } ||
-                // Tags are no longer a filter row, so let the search box find them
-                document.aiTopics?.contains { $0.lowercased().contains(lowercased) } == true
+                // The Library box is the only search now (the centre tab is Quotes),
+                // so it reads the saved text too, not just titles and summaries
+                let fields: [String?] = [
+                    document.title,
+                    document.authorName,
+                    document.authorHandle,
+                    document.aiSummaryShort,
+                    document.userNotes,
+                    document.bodyPlain,
+                ]
+                let lists: [[String]?] = [
+                    document.userCategories,
+                    // Tags are no longer a filter row, so let the search box find them
+                    document.aiTopics,
+                    document.aiKeyPoints,
+                    document.aiQuotableLines,
+                ]
+                return fields.contains { $0?.localizedCaseInsensitiveContains(query) == true } ||
+                    lists.contains { $0?.contains { $0.localizedCaseInsensitiveContains(query) } == true }
             }
         }
         filteredDocuments = result

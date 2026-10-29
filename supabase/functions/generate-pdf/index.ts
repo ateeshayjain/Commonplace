@@ -16,8 +16,9 @@ const corsHeaders = {
 };
 
 // Bump when the layout changes; the app regenerates stored PDFs older than its
-// DocumentService.pdfLayoutVersion. 2: Sangrah header and per-page footer
-const PDF_LAYOUT_VERSION = 2;
+// DocumentService.pdfLayoutVersion. 2: Sangrah header and per-page footer;
+// 3: the post's own date next to the save date
+const PDF_LAYOUT_VERSION = 3;
 
 interface GeneratePDFRequest {
   documentId: string;
@@ -254,7 +255,11 @@ async function generateArticlePDF(input: any): Promise<Uint8Array> {
   yPosition -= 18;
 
   const sourceText = `${getSourceLabel(document.source_type)} · ${document.source_domain || document.source_type}`;
-  const dateText = formatDate(document.created_at);
+  // When the piece was posted, if the source says, as well as when it was saved
+  const savedText = `Saved ${formatDate(document.created_at)}`;
+  const dateText = document.original_published_at
+    ? `Posted ${formatDate(document.original_published_at)} · ${savedText}`
+    : savedText;
 
   page.drawText(sourceText, {
     x: margin,
@@ -517,6 +522,7 @@ function getSourceLabel(sourceType: string): string {
 function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',

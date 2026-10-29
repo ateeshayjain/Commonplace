@@ -91,17 +91,17 @@ class DocumentDetailViewModel: ObservableObject {
     static let maxQuoteLength = 280
 
     /// Adds a passage the reader selected to the document's quotes (and so to the
-    /// share cards). Returns false when it is too long to fit on a card.
+    /// share cards) and bookmarks it. Returns the quote as stored, or nil when it
+    /// is too long to fit on a card.
     @discardableResult
-    func saveQuote(_ selection: String) -> Bool {
+    func saveQuote(_ selection: String) -> String? {
         let text = selection
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
-        guard !text.isEmpty else { return true }
-        guard text.count <= Self.maxQuoteLength else {
+        guard !text.isEmpty, text.count <= Self.maxQuoteLength else {
             HapticManager.error()
-            return false
+            return nil
         }
 
         var lines = document.aiQuotableLines ?? []
@@ -109,11 +109,14 @@ class DocumentDetailViewModel: ObservableObject {
             lines.append(text)
         }
         setQuotableLines(lines)
-        return true
+        // Picking a line by hand is saving it, so it goes to the Quotes tab too
+        SavedQuoteService.shared.save(ShareableQuote(text: text, isVerbatim: true), in: document)
+        return text
     }
 
     func removeQuote(_ text: String) {
         setQuotableLines((document.aiQuotableLines ?? []).filter { $0 != text })
+        SavedQuoteService.shared.remove(text, in: document.id)
     }
 
     private func setQuotableLines(_ lines: [String]) {

@@ -50,6 +50,10 @@
 		A1000043 /* CPTagChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* CPTagChip.swift */; };
 		A1000060 /* SourceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000060 /* SourceIcon.swift */; };
 		A1000062 /* SelectableText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000062 /* SelectableText.swift */; };
+		A1000066 /* QuotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000066 /* QuotesViewModel.swift */; };
+		A1000065 /* QuotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000065 /* QuotesView.swift */; };
+		A1000064 /* SavedQuoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000064 /* SavedQuoteService.swift */; };
+		A1000063 /* SavedQuote.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000063 /* SavedQuote.swift */; };
 		A1000061 /* QuoteCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* QuoteCard.swift */; };
 		A1000050 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000050 /* ShareViewController.swift */; };
 		A1000051 /* ShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* ShareView.swift */; };
@@ -129,6 +133,10 @@
 		B1000043 /* CPTagChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPTagChip.swift; sourceTree = "<group>"; };
 		B1000060 /* SourceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceIcon.swift; sourceTree = "<group>"; };
 		B1000062 /* SelectableText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectableText.swift; sourceTree = "<group>"; };
+		B1000066 /* QuotesViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotesViewModel.swift; sourceTree = "<group>"; };
+		B1000065 /* QuotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotesView.swift; sourceTree = "<group>"; };
+		B1000064 /* SavedQuoteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedQuoteService.swift; sourceTree = "<group>"; };
+		B1000063 /* SavedQuote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedQuote.swift; sourceTree = "<group>"; };
 		B1000061 /* QuoteCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteCard.swift; sourceTree = "<group>"; };
 		B1000050 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		B1000051 /* ShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareView.swift; sourceTree = "<group>"; };
@@ -233,6 +241,7 @@
 			children = (
 				E1000013 /* Library */,
 				E1000014 /* Detail */,
+				E1000051 /* Quotes */,
 				E1000015 /* Search */,
 				E1000016 /* Profile */,
 				E1000017 /* Onboarding */,
@@ -278,6 +287,7 @@
 				B1000006 /* Category.swift */,
 				B1000040 /* GeneratedAsset.swift */,
 				B1000041 /* Tag.swift */,
+				B1000063 /* SavedQuote.swift */,
 				B1000042 /* DocumentCollection.swift */,
 			);
 			path = Models;
@@ -291,6 +301,7 @@
 				B1000008 /* AuthService.swift */,
 				B1000054 /* SharedAuthStore.swift */,
 				B1000009 /* DocumentService.swift */,
+				B1000064 /* SavedQuoteService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -322,6 +333,15 @@
 				B1000061 /* QuoteCard.swift */,
 			);
 			path = Detail;
+			sourceTree = "<group>";
+		};
+		E1000051 /* Quotes */ = {
+			isa = PBXGroup;
+			children = (
+				B1000065 /* QuotesView.swift */,
+				B1000066 /* QuotesViewModel.swift */,
+			);
+			path = Quotes;
 			sourceTree = "<group>";
 		};
 		E1000015 /* Search */ = {
@@ -534,6 +554,10 @@
 				A1000043 /* CPTagChip.swift in Sources */,
 				A1000060 /* SourceIcon.swift in Sources */,
 				A1000062 /* SelectableText.swift in Sources */,
+				A1000066 /* QuotesViewModel.swift in Sources */,
+				A1000065 /* QuotesView.swift in Sources */,
+				A1000064 /* SavedQuoteService.swift in Sources */,
+				A1000063 /* SavedQuote.swift in Sources */,
 				A1000061 /* QuoteCard.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -686,7 +710,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -715,7 +739,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -742,7 +766,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;
@@ -766,7 +790,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;

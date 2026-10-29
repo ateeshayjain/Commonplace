@@ -14,6 +14,7 @@ struct DocumentDetailView: View {
     @State private var visibleQuoteID: ShareableQuote.ID?
     @State private var showingQuoteTooLong = false
     @State private var quoteSavedToast = false
+    @ObservedObject private var savedQuotes = SavedQuoteService.shared
     @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
@@ -81,7 +82,7 @@ struct DocumentDetailView: View {
         // Mid-read, the way out of a long article without scrolling back up
         .safeAreaInset(edge: .bottom) {
             if quoteSavedToast {
-                floatingPill("Added to quotes", systemImage: "checkmark.circle.fill") {}
+                floatingPill("Saved to Quotes", systemImage: "bookmark.fill") {}
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if isContentExpanded {
                 floatingPill("Collapse article", systemImage: "chevron.up") {
@@ -152,6 +153,9 @@ struct DocumentDetailView: View {
         }
         .task {
             await viewModel.loadTags()
+        }
+        .task {
+            await savedQuotes.load()
         }
     }
 
@@ -318,14 +322,7 @@ struct DocumentDetailView: View {
                         .foregroundColor(.cpTextSecondary)
                         .lineLimit(2)
                     Spacer(minLength: CPSpacing.sm)
-                    Button {
-                        sharingQuote = quote
-                    } label: {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                            .font(.cpSubhead)
-                    }
-                    .foregroundColor(.cpTint)
-                    .accessibilityLabel("Share this quote as an image")
+                    quoteActions(quote)
                 }
             }
         }
@@ -341,6 +338,15 @@ struct DocumentDetailView: View {
                 Label("Share as Image", systemImage: "square.and.arrow.up")
             }
             Button {
+                savedQuotes.toggle(quote, in: viewModel.document)
+            } label: {
+                if savedQuotes.isSaved(quote, in: viewModel.document.id) {
+                    Label("Remove from Quotes", systemImage: "bookmark.slash")
+                } else {
+                    Label("Save to Quotes", systemImage: "bookmark")
+                }
+            }
+            Button {
                 UIPasteboard.general.string = quote.caption(for: viewModel.document)
             } label: {
                 Label("Copy Quote", systemImage: "doc.on.doc")
@@ -353,6 +359,30 @@ struct DocumentDetailView: View {
                 }
             }
         }
+    }
+
+    /// Bookmark (to the Quotes tab) and share, icon-only like a post's actions
+    private func quoteActions(_ quote: ShareableQuote) -> some View {
+        let isSaved = savedQuotes.isSaved(quote, in: viewModel.document.id)
+
+        return HStack(spacing: CPSpacing.md) {
+            Button {
+                savedQuotes.toggle(quote, in: viewModel.document)
+            } label: {
+                Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .accessibilityLabel(isSaved ? "Remove from saved quotes" : "Save quote")
+
+            Button {
+                sharingQuote = quote
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Share this quote as an image")
+        }
+        .font(.system(size: 19, weight: .medium))
+        .foregroundColor(.cpTint)
     }
 
     private func pageDots(count: Int, current: Int, select: @escaping (Int) -> Void) -> some View {
@@ -552,7 +582,7 @@ struct DocumentDetailView: View {
     }
 
     private func saveQuote(_ selection: String) {
-        guard viewModel.saveQuote(selection) else {
+        guard viewModel.saveQuote(selection) != nil else {
             showingQuoteTooLong = true
             return
         }

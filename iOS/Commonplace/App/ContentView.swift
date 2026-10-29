@@ -7,7 +7,7 @@ struct ContentView: View {
 
     enum Tab: Hashable {
         case library
-        case search
+        case quotes
         case profile
     }
 
@@ -35,11 +35,12 @@ struct ContentView: View {
                 }
                 .tag(Tab.library)
 
-            SearchView()
+            // Search lives in the Library's search box; the centre tab is the reader's quotes
+            QuotesView()
                 .tabItem {
-                    Label("Search", systemImage: "magnifyingglass")
+                    Label("Quotes", systemImage: "bookmark")
                 }
-                .tag(Tab.search)
+                .tag(Tab.quotes)
 
             ProfileView()
                 .tabItem {
