@@ -153,6 +153,14 @@ class DocumentService {
         )
     }
 
+    func updateQuotableLines(_ id: UUID, lines: [String]) async throws {
+        try await supabase.update(
+            table: "documents",
+            id: id,
+            values: ["ai_quotable_lines": lines]
+        )
+    }
+
     func archiveDocument(_ id: UUID, isArchived: Bool) async throws {
         try await supabase.update(
             table: "documents",

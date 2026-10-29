@@ -24,6 +24,43 @@ struct ShareableQuote: Identifiable, Hashable {
         }
         return quotes
     }
+
+    /// Authors who write in lowercase keep their style inside the line; only the
+    /// opening letter is capitalised, as when a quote starts a sentence in print
+    var displayText: String {
+        guard let first = text.first, first.isLowercase else { return text }
+        return first.uppercased() + text.dropFirst()
+    }
+
+    /// The credit under a quote: "Article title, Author, Source"
+    static func credit(for document: Document) -> String {
+        [document.title, document.authorName ?? document.authorHandle, sourceName(for: document)]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+    }
+
+    /// The platform's name, or the site's for plain articles ("stratechery.com", not "Article")
+    static func sourceName(for document: Document) -> String? {
+        switch document.sourceType {
+        case .article, .unknown, .manual: return document.sourceDomain?.replacingOccurrences(of: "www.", with: "")
+        default: return document.sourceType.displayName
+        }
+    }
+
+    /// Caption for the post: links on an image can't be tapped, so the source link
+    /// travels here (pasted into the caption, or into a Stories link sticker)
+    func caption(for document: Document) -> String {
+        var lines = [isVerbatim ? "\u{201C}\(displayText)\u{201D}" : displayText,
+                     "\u{2014} \(Self.credit(for: document))"]
+        if let url = document.sourceUrl {
+            lines.append("")
+            lines.append("Read it: \(url)")
+        }
+        lines.append("")
+        lines.append("Saved with Sangrah")
+        return lines.joined(separator: "\n")
+    }
 }
 
 enum QuoteCardFormat: String, CaseIterable, Identifiable {
@@ -77,7 +114,7 @@ struct QuoteCardView: View {
                     .padding(.bottom, CPSpacing.sm)
             }
 
-            Text(quote.text)
+            Text(quote.displayText)
                 .font(.system(size: format == .story ? 30 : 25, weight: .semibold, design: .serif))
                 .foregroundColor(.cpBrandCream)
                 .lineSpacing(4)
@@ -111,57 +148,19 @@ struct QuoteCardView: View {
         }
     }
 
+    /// "— Article title, Author, Source"; the link goes in the caption instead
     private var attribution: some View {
-        VStack(alignment: .leading, spacing: CPSpacing.xxs) {
+        VStack(alignment: .leading, spacing: CPSpacing.xs) {
             Rectangle()
                 .fill(ribbon)
                 .frame(width: 32, height: 3)
-                .padding(.bottom, CPSpacing.xs)
 
-            if quote.isVerbatim {
-                Text("\u{2014} \(authorLine)")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.cpBrandCream)
-                Text(document.title)
-                    .font(.system(size: 12))
-                    .foregroundColor(.cpBrandCream.opacity(0.7))
-                    .lineLimit(2)
-            } else {
-                // Sangrah's summary: credit the piece and its author, not as their words
-                Text("From \u{201C}\(document.title)\u{201D}")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.cpBrandCream)
-                    .lineLimit(2)
-                Text("by \(authorLine)")
-                    .font(.system(size: 12))
-                    .foregroundColor(.cpBrandCream.opacity(0.7))
-            }
-
-            if let link = displayLink {
-                HStack(spacing: 5) {
-                    SourceIcon(type: document.sourceType, size: 11, tint: .cpBrandCream.opacity(0.6))
-                    Text(link)
-                        .font(.system(size: 11))
-                        .foregroundColor(.cpBrandCream.opacity(0.6))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .padding(.top, CPSpacing.xxs)
-            }
+            Text("\(quote.isVerbatim ? "\u{2014}" : "From") \(ShareableQuote.credit(for: document))")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.cpBrandCream.opacity(0.85))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var authorLine: String {
-        document.authorName ?? document.authorHandle ?? document.sourceDomain ?? document.sourceType.displayName
-    }
-
-    /// host/path without the scheme, "www." or share-tracking parameters
-    private var displayLink: String? {
-        guard let raw = document.sourceUrl, var parts = URLComponents(string: raw), let host = parts.host else { return nil }
-        parts.query = nil
-        parts.fragment = nil
-        let path = parts.path == "/" ? "" : parts.path
-        return host.replacingOccurrences(of: "www.", with: "") + path
     }
 }
 
@@ -204,10 +203,20 @@ struct QuoteShareSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
-                CPButton("Share", icon: "square.and.arrow.up") {
-                    if let image = render() {
-                        shareItem = SharedImage(image: image)
+                VStack(spacing: CPSpacing.xs) {
+                    CPButton("Share", icon: "square.and.arrow.up") {
+                        if let image = render() {
+                            // Only the image goes to the share sheet (Instagram's extension
+                            // takes images); the caption with the link waits on the clipboard
+                            UIPasteboard.general.string = quote.caption(for: document)
+                            shareItem = SharedImage(image: image)
+                        }
                     }
+
+                    Label("Caption with the source link is copied when you share. Paste it into your post or a link sticker.", systemImage: "doc.on.clipboard")
+                        .font(.cpFootnote)
+                        .foregroundColor(.cpTextSecondary)
+                        .multilineTextAlignment(.center)
                 }
             }
             .padding(CPSpacing.screenHorizontal)

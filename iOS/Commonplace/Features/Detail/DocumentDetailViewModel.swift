@@ -87,6 +87,53 @@ class DocumentDetailViewModel: ObservableObject {
         }
     }
 
+    /// Longest passage that still reads well on a share card
+    static let maxQuoteLength = 280
+
+    /// Adds a passage the reader selected to the document's quotes (and so to the
+    /// share cards). Returns false when it is too long to fit on a card.
+    @discardableResult
+    func saveQuote(_ selection: String) -> Bool {
+        let text = selection
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !text.isEmpty else { return true }
+        guard text.count <= Self.maxQuoteLength else {
+            HapticManager.error()
+            return false
+        }
+
+        var lines = document.aiQuotableLines ?? []
+        if !lines.contains(where: { $0.caseInsensitiveCompare(text) == .orderedSame }) {
+            lines.append(text)
+        }
+        setQuotableLines(lines)
+        return true
+    }
+
+    func removeQuote(_ text: String) {
+        setQuotableLines((document.aiQuotableLines ?? []).filter { $0 != text })
+    }
+
+    private func setQuotableLines(_ lines: [String]) {
+        let previous = document.aiQuotableLines
+        document.aiQuotableLines = lines
+        HapticManager.saveSuccess()
+
+        // Demo documents live only in memory
+        guard AuthService.shared.currentUser?.email != "demo@commonplace.app" else { return }
+        Task {
+            do {
+                try await documentService.updateQuotableLines(document.id, lines: lines)
+            } catch {
+                document.aiQuotableLines = previous
+                self.error = error
+                HapticManager.error()
+            }
+        }
+    }
+
     func updateReadProgress(_ progress: Double) {
         Task {
             do {

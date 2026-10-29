@@ -12,6 +12,8 @@ struct DocumentDetailView: View {
     @State private var isContentExpanded = false
     @State private var sharingQuote: ShareableQuote?
     @State private var visibleQuoteID: ShareableQuote.ID?
+    @State private var showingQuoteTooLong = false
+    @State private var quoteSavedToast = false
     @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
@@ -20,6 +22,7 @@ struct DocumentDetailView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: CPSpacing.lg) {
                 // Source badge
@@ -36,7 +39,7 @@ struct DocumentDetailView: View {
                 sourceLinkSection
 
                 // Hook and the author's own lines, each shareable as a Sangrah card
-                let quotes = ShareableQuote.all(for: document)
+                let quotes = ShareableQuote.all(for: viewModel.document)
                 if !quotes.isEmpty {
                     quotesSection(quotes)
                 }
@@ -60,7 +63,8 @@ struct DocumentDetailView: View {
                 if document.pdfUrl != nil {
                     pdfPreviewSection
                 } else {
-                    contentPreviewSection
+                    contentPreviewSection(proxy: proxy)
+                        .id(Self.contentAnchor)
                 }
 
                 // User notes
@@ -73,6 +77,19 @@ struct DocumentDetailView: View {
             }
             .padding(.horizontal, CPSpacing.screenHorizontal)
             .padding(.vertical, CPSpacing.screenVertical)
+        }
+        // Mid-read, the way out of a long article without scrolling back up
+        .safeAreaInset(edge: .bottom) {
+            if quoteSavedToast {
+                floatingPill("Added to quotes", systemImage: "checkmark.circle.fill") {}
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if isContentExpanded {
+                floatingPill("Collapse article", systemImage: "chevron.up") {
+                    collapseContent(proxy: proxy)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -123,7 +140,12 @@ struct DocumentDetailView: View {
             )
         }
         .sheet(item: $sharingQuote) { quote in
-            QuoteShareSheet(quote: quote, document: document)
+            QuoteShareSheet(quote: quote, document: viewModel.document)
+        }
+        .alert("That's a long passage", isPresented: $showingQuoteTooLong) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Pick up to \(DocumentDetailViewModel.maxQuoteLength) characters so the quote fits on a card.")
         }
         .sheet(isPresented: $showingCampaign) {
             CampaignView(document: document)
@@ -274,7 +296,15 @@ struct DocumentDetailView: View {
                 .frame(width: 4)
 
             VStack(alignment: .leading, spacing: CPSpacing.xs) {
-                Text(quote.isVerbatim ? "\u{201C}\(quote.text)\u{201D}" : quote.text)
+                if !quote.isVerbatim {
+                    Text("KEY IDEA")
+                        .font(.cpCaption1)
+                        .fontWeight(.semibold)
+                        .tracking(1.2)
+                        .foregroundColor(.cpTint)
+                }
+
+                Text(quote.isVerbatim ? "\u{201C}\(quote.displayText)\u{201D}" : quote.displayText)
                     .font(quote.isVerbatim ? .cpTitle3 : .cpTitle2)
                     .italic()
                     .foregroundColor(.cpText)
@@ -282,12 +312,12 @@ struct DocumentDetailView: View {
 
                 Spacer(minLength: 0)
 
-                HStack {
-                    Text(quote.isVerbatim ? "\u{2014} \(document.authorName ?? document.sourceType.displayName)" : "Key idea")
+                HStack(alignment: .bottom) {
+                    Text("\(quote.isVerbatim ? "\u{2014}" : "From") \(ShareableQuote.credit(for: viewModel.document))")
                         .font(.cpFootnote)
                         .foregroundColor(.cpTextSecondary)
-                        .lineLimit(1)
-                    Spacer()
+                        .lineLimit(2)
+                    Spacer(minLength: CPSpacing.sm)
                     Button {
                         sharingQuote = quote
                     } label: {
@@ -304,6 +334,25 @@ struct DocumentDetailView: View {
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(Color.cpBackgroundSecondary)
         .cornerRadius(CPSpacing.cornerRadiusLarge)
+        .contextMenu {
+            Button {
+                sharingQuote = quote
+            } label: {
+                Label("Share as Image", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                UIPasteboard.general.string = quote.caption(for: viewModel.document)
+            } label: {
+                Label("Copy Quote", systemImage: "doc.on.doc")
+            }
+            if quote.isVerbatim {
+                Button(role: .destructive) {
+                    viewModel.removeQuote(quote.text)
+                } label: {
+                    Label("Remove Quote", systemImage: "trash")
+                }
+            }
+        }
     }
 
     private func pageDots(count: Int, current: Int, select: @escaping (Int) -> Void) -> some View {
@@ -452,27 +501,80 @@ struct DocumentDetailView: View {
         return "Clean PDF"
     }
 
-    private var contentPreviewSection: some View {
-        VStack(alignment: .leading, spacing: CPSpacing.sm) {
-            Text("Content")
-                .sectionHeaderStyle()
+    private static let contentAnchor = "content"
 
-            Text(document.bodyPlain)
-                .font(.cpBody)
-                .foregroundColor(.cpText)
-                .lineLimit(isContentExpanded ? nil : 20)
-                .textSelection(.enabled)
+    private func contentPreviewSection(proxy: ScrollViewProxy) -> some View {
+        let isLong = document.bodyPlain.count > 500
 
-            if document.bodyPlain.count > 500 {
+        return VStack(alignment: .leading, spacing: CPSpacing.sm) {
+            HStack {
+                Text("Content")
+                    .sectionHeaderStyle()
+                Spacer()
+                if isLong && isContentExpanded {
+                    Button("Collapse") { collapseContent(proxy: proxy) }
+                        .font(.cpSubhead)
+                        .foregroundColor(.cpTint)
+                }
+            }
+
+            // Select any passage and choose "Save as Quote" to add it to the cards
+            SelectableText(
+                text: document.bodyPlain,
+                lineLimit: isContentExpanded ? nil : 20,
+                actions: [
+                    .init(title: "Save as Quote", systemImage: "quote.opening") { selection in
+                        saveQuote(selection)
+                    }
+                ]
+            )
+
+            if isLong {
                 Button(isContentExpanded ? "Show Less" : "Read More") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isContentExpanded.toggle()
+                    if isContentExpanded {
+                        collapseContent(proxy: proxy)
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.2)) { isContentExpanded = true }
                     }
                 }
                 .font(.cpSubhead)
                 .foregroundColor(.cpTint)
             }
         }
+    }
+
+    /// Back to the 20-line preview, with the top of the article in view
+    private func collapseContent(proxy: ScrollViewProxy) {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            isContentExpanded = false
+            proxy.scrollTo(Self.contentAnchor, anchor: .top)
+        }
+    }
+
+    private func saveQuote(_ selection: String) {
+        guard viewModel.saveQuote(selection) else {
+            showingQuoteTooLong = true
+            return
+        }
+        withAnimation { quoteSavedToast = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            withAnimation { quoteSavedToast = false }
+        }
+    }
+
+    private func floatingPill(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.cpSubhead)
+                .fontWeight(.semibold)
+                .foregroundColor(.cpTint)
+                .padding(.horizontal, CPSpacing.md)
+                .padding(.vertical, CPSpacing.sm)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+        }
+        .padding(.bottom, CPSpacing.xs)
     }
 
     private var notesSection: some View {

@@ -47,7 +47,7 @@ struct Document: Identifiable, Codable, Hashable {
     let aiComplexityScore: Int?
     let aiReadingLevel: ReadingLevel?
     let aiContentType: ContentType?
-    let aiQuotableLines: [String]?
+    var aiQuotableLines: [String]?
 
     // Source-specific metadata (YouTube channel/chapters, OCR pages)
     var metadata: DocumentMetadata?
