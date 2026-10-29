@@ -5,11 +5,12 @@ struct DocumentDetailView: View {
     let document: Document
 
     @StateObject private var viewModel: DocumentDetailViewModel
-    @State private var showingPDF = false
     @State private var showingCategorySheet = false
     @State private var showingNotes = false
     @State private var showingCampaign = false
     @State private var showingDeleteConfirmation = false
+    @State private var isContentExpanded = false
+    @State private var sharingQuote: ShareableQuote?
     @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
@@ -33,19 +34,15 @@ struct DocumentDetailView: View {
                 authorSection
                 sourceLinkSection
 
-                // AI Hook (pull-quote)
-                if let hook = document.aiHook, !hook.isEmpty {
-                    hookSection(hook)
+                // Hook and the author's own lines, each shareable as a Sangrah card
+                let quotes = ShareableQuote.all(for: document)
+                if !quotes.isEmpty {
+                    quotesSection(quotes)
                 }
 
                 // AI Summary
                 if let summary = document.aiSummaryShort {
                     summarySection(summary)
-                }
-
-                // AI Tags
-                if !viewModel.tags.isEmpty {
-                    tagsSection(viewModel.tags)
                 }
 
                 // Key Points
@@ -67,6 +64,11 @@ struct DocumentDetailView: View {
 
                 // User notes
                 notesSection
+
+                // AI Tags, last: they are for finding the item again, not for reading it
+                if !viewModel.tags.isEmpty {
+                    tagsSection(viewModel.tags)
+                }
             }
             .padding(.horizontal, CPSpacing.screenHorizontal)
             .padding(.vertical, CPSpacing.screenVertical)
@@ -89,10 +91,8 @@ struct DocumentDetailView: View {
                 .presentationDetents([.medium, .large])
                 .ignoresSafeArea()
         }
-        .fullScreenCover(isPresented: $showingPDF) {
-            if let pdfUrl = document.pdfUrl, let url = URL(string: pdfUrl) {
-                PDFViewerView(url: url, title: document.title)
-            }
+        .fullScreenCover(item: $viewModel.viewedFile) { file in
+            PDFViewerView(url: file.url, title: document.title)
         }
         .confirmationDialog(
             "Delete this item?",
@@ -121,6 +121,9 @@ struct DocumentDetailView: View {
                 selectedCategories: $viewModel.selectedCategories
             )
         }
+        .sheet(item: $sharingQuote) { quote in
+            QuoteShareSheet(quote: quote, document: document)
+        }
         .sheet(isPresented: $showingCampaign) {
             CampaignView(document: document)
         }
@@ -135,8 +138,7 @@ struct DocumentDetailView: View {
         HStack {
             // Source type badge
             HStack(spacing: CPSpacing.xxs) {
-                Text(document.sourceType.icon)
-                    .font(.system(size: 14))
+                SourceIcon(type: document.sourceType, size: 14)
 
                 Text(document.sourceType.displayName)
                     .font(.cpCaption1)
@@ -234,17 +236,47 @@ struct DocumentDetailView: View {
         }
     }
 
-    private func hookSection(_ hook: String) -> some View {
+    private func quotesSection(_ quotes: [ShareableQuote]) -> some View {
+        VStack(alignment: .leading, spacing: CPSpacing.md) {
+            ForEach(quotes) { quote in
+                quoteRow(quote)
+            }
+        }
+    }
+
+    /// The pull-quote style of the hook, for every quote, with a share button
+    private func quoteRow(_ quote: ShareableQuote) -> some View {
         HStack(alignment: .top, spacing: CPSpacing.sm) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color.cpTint)
                 .frame(width: 4)
 
-            Text(hook)
-                .font(.cpTitle3)
-                .italic()
-                .foregroundColor(.cpText)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: CPSpacing.xs) {
+                Text(quote.isVerbatim ? "\u{201C}\(quote.text)\u{201D}" : quote.text)
+                    .font(quote.isVerbatim ? .cpBody : .cpTitle3)
+                    .italic()
+                    .foregroundColor(.cpText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+
+                HStack {
+                    if quote.isVerbatim, let author = document.authorName {
+                        Text("\u{2014} \(author)")
+                            .font(.cpFootnote)
+                            .foregroundColor(.cpTextSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Button {
+                        sharingQuote = quote
+                    } label: {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                            .font(.cpSubhead)
+                    }
+                    .foregroundColor(.cpTint)
+                    .accessibilityLabel("Share this quote as an image")
+                }
+            }
         }
         .padding(.vertical, CPSpacing.xxs)
     }
@@ -333,22 +365,51 @@ struct DocumentDetailView: View {
 
     private var pdfPreviewSection: some View {
         Button {
-            showingPDF = true
+            viewModel.openPDF()
         } label: {
-            VStack(spacing: CPSpacing.sm) {
-                Image(systemName: "doc.text.fill")
-                    .font(.system(size: 40, weight: .ultraLight))
-                    .foregroundColor(.cpTint)
+            HStack(spacing: CPSpacing.sm) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: CPSpacing.cornerRadiusSmall)
+                        .fill(Color.cpTint.opacity(0.15))
+                        .frame(width: 40, height: 40)
+                    if viewModel.isPreparingPDF {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.cpTint)
+                    }
+                }
 
-                Text("Read Full Article")
-                    .font(.cpHeadline)
-                    .foregroundColor(.cpTint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Read Full Article")
+                        .font(.cpHeadline)
+                        .foregroundColor(.cpText)
+                    Text(fullArticleSubtitle)
+                        .font(.cpFootnote)
+                        .foregroundColor(.cpTextSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.cpCaption1)
+                    .foregroundColor(.cpTextTertiary)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 150)
+            .padding(CPSpacing.sm)
             .background(Color.cpBackgroundSecondary)
             .cornerRadius(CPSpacing.cornerRadiusMedium)
         }
+        .disabled(viewModel.isPreparingPDF)
+    }
+
+    private var fullArticleSubtitle: String {
+        if let minutes = document.readingTimeMinutes {
+            return "Clean PDF \u{00B7} \(minutes) min read"
+        }
+        return "Clean PDF"
     }
 
     private var contentPreviewSection: some View {
@@ -359,11 +420,14 @@ struct DocumentDetailView: View {
             Text(document.bodyPlain)
                 .font(.cpBody)
                 .foregroundColor(.cpText)
-                .lineLimit(20)
+                .lineLimit(isContentExpanded ? nil : 20)
+                .textSelection(.enabled)
 
             if document.bodyPlain.count > 500 {
-                Button("Read More") {
-                    // Expand or show full view
+                Button(isContentExpanded ? "Show Less" : "Read More") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isContentExpanded.toggle()
+                    }
                 }
                 .font(.cpSubhead)
                 .foregroundColor(.cpTint)
@@ -519,7 +583,7 @@ struct ComplexityIndicator: View {
 
 /// UIActivityViewController for SwiftUI sheets; presenting from the root view
 /// controller fails silently when another screen is already presented.
-private struct ActivityView: UIViewControllerRepresentable {
+struct ActivityView: UIViewControllerRepresentable {
     let items: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {

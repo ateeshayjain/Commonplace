@@ -282,8 +282,7 @@ struct SourceChip: View {
 
     var body: some View {
         HStack(spacing: CPSpacing.xxs) {
-            Text(document.sourceType.icon)
-                .font(.caption)
+            SourceIcon(type: document.sourceType, size: 12)
             Text(document.title)
                 .font(.cpCaption1)
                 .lineLimit(1)

@@ -48,6 +48,8 @@
 		A1000031 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000031 /* Assets.xcassets */; };
 		A1000035 /* FlowLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000036 /* FlowLayout.swift */; };
 		A1000043 /* CPTagChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000043 /* CPTagChip.swift */; };
+		A1000060 /* SourceIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000060 /* SourceIcon.swift */; };
+		A1000061 /* QuoteCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* QuoteCard.swift */; };
 		A1000050 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000050 /* ShareViewController.swift */; };
 		A1000051 /* ShareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000051 /* ShareView.swift */; };
 		A1000052 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000003 /* Config.swift */; };
@@ -124,6 +126,8 @@
 		B1000033 /* Commonplace.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Commonplace.entitlements; sourceTree = "<group>"; };
 		B1000036 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		B1000043 /* CPTagChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPTagChip.swift; sourceTree = "<group>"; };
+		B1000060 /* SourceIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceIcon.swift; sourceTree = "<group>"; };
+		B1000061 /* QuoteCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteCard.swift; sourceTree = "<group>"; };
 		B1000050 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		B1000051 /* ShareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareView.swift; sourceTree = "<group>"; };
 		B1000052 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -313,6 +317,7 @@
 				B1000015 /* DocumentDetailView.swift */,
 				B1000016 /* DocumentDetailViewModel.swift */,
 				B1000017 /* PDFViewerView.swift */,
+				B1000061 /* QuoteCard.swift */,
 			);
 			path = Detail;
 			sourceTree = "<group>";
@@ -351,6 +356,7 @@
 				B1000028 /* CPCard.swift */,
 				B1000036 /* FlowLayout.swift */,
 				B1000043 /* CPTagChip.swift */,
+				B1000060 /* SourceIcon.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -523,6 +529,8 @@
 				A1000030 /* HapticManager.swift in Sources */,
 				A1000035 /* FlowLayout.swift in Sources */,
 				A1000043 /* CPTagChip.swift in Sources */,
+				A1000060 /* SourceIcon.swift in Sources */,
+				A1000061 /* QuoteCard.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -674,7 +682,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -703,7 +711,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -730,7 +738,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;
@@ -754,7 +762,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;

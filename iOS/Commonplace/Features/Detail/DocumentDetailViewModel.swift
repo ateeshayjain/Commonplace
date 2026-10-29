@@ -13,6 +13,8 @@ class DocumentDetailViewModel: ObservableObject {
     @Published var isPreparingPDF = false
     /// A file ready to hand to the share sheet.
     @Published var sharedFile: SharedFile?
+    /// A file ready to open in the in-app PDF reader.
+    @Published var viewedFile: SharedFile?
 
     struct SharedFile: Identifiable {
         let url: URL
@@ -114,6 +116,14 @@ class DocumentDetailViewModel: ObservableObject {
     }
 
     func sharePDF() {
+        preparePDF { [weak self] file in self?.sharedFile = SharedFile(url: file) }
+    }
+
+    func openPDF() {
+        preparePDF { [weak self] file in self?.viewedFile = SharedFile(url: file) }
+    }
+
+    private func preparePDF(then present: @escaping (URL) -> Void) {
         guard !isPreparingPDF else { return }
         if AuthService.shared.currentUser?.email == "demo@commonplace.app" {
             error = PDFShareError.demoMode
@@ -124,7 +134,7 @@ class DocumentDetailViewModel: ObservableObject {
             defer { isPreparingPDF = false }
             do {
                 let file = try await documentService.pdfFile(for: document)
-                sharedFile = SharedFile(url: file)
+                present(file)
             } catch {
                 self.error = PDFShareError.failed
                 HapticManager.error()
