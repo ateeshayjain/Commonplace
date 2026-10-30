@@ -7,6 +7,8 @@ struct DocumentDetailView: View {
     @StateObject private var viewModel: DocumentDetailViewModel
     @State private var showingCategorySheet = false
     @State private var showingNotes = false
+    @State private var showingTitleEditor = false
+    @State private var titleDraft = ""
     @State private var showingCampaign = false
     @State private var showingDeleteConfirmation = false
     @State private var isContentExpanded = false
@@ -30,7 +32,7 @@ struct DocumentDetailView: View {
                 sourceHeader
 
                 // Title
-                Text(document.title)
+                Text(viewModel.document.title)
                     .font(.cpTitle1)
                     .foregroundColor(.cpText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -112,7 +114,7 @@ struct DocumentDetailView: View {
                 .ignoresSafeArea()
         }
         .fullScreenCover(item: $viewModel.viewedFile) { file in
-            PDFViewerView(url: file.url, title: document.title)
+            PDFViewerView(url: file.url, title: viewModel.document.title)
         }
         .confirmationDialog(
             "Delete this item?",
@@ -134,6 +136,11 @@ struct DocumentDetailView: View {
             Button("OK") { viewModel.error = nil }
         } message: {
             Text(viewModel.error?.localizedDescription ?? "Something went wrong.")
+        }
+        .alert("Edit Title", isPresented: $showingTitleEditor) {
+            TextField("Title", text: $titleDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { viewModel.updateTitle(titleDraft) }
         }
         .sheet(isPresented: $showingCategorySheet) {
             CategorySelectionSheet(
@@ -317,7 +324,8 @@ struct DocumentDetailView: View {
 
                 Spacer(minLength: 0)
 
-                HStack(alignment: .bottom) {
+                // Icons sit on the baseline of the credit's last line ("On Substack")
+                HStack(alignment: .lastTextBaseline) {
                     QuoteCreditView(document: viewModel.document, isVerbatim: quote.isVerbatim)
                     Spacer(minLength: CPSpacing.sm)
                     quoteActions(quote)
@@ -363,7 +371,8 @@ struct DocumentDetailView: View {
     private func quoteActions(_ quote: ShareableQuote) -> some View {
         let isSaved = savedQuotes.isSaved(quote, in: viewModel.document.id)
 
-        return HStack(spacing: CPSpacing.md) {
+        // On a shared baseline, so the taller share glyph doesn't hang below the bookmark
+        return HStack(alignment: .firstTextBaseline, spacing: CPSpacing.md) {
             Button {
                 savedQuotes.toggle(quote, in: viewModel.document)
             } label: {
@@ -670,6 +679,13 @@ struct DocumentDetailView: View {
             showingCampaign = true
         } label: {
             Label("Write About", systemImage: "square.and.pencil")
+        }
+
+        Button {
+            titleDraft = viewModel.document.title
+            showingTitleEditor = true
+        } label: {
+            Label("Edit Title", systemImage: "pencil")
         }
 
         Button {

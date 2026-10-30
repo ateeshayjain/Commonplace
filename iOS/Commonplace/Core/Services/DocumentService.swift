@@ -3,6 +3,8 @@ import Foundation
 extension Notification.Name {
     /// Posted with the deleted document's UUID as `object` so open lists can drop it.
     static let documentDeleted = Notification.Name("documentDeleted")
+    /// Posted with the edited `Document` as `object` so open lists show the change.
+    static let documentUpdated = Notification.Name("documentUpdated")
 }
 
 class DocumentService {
@@ -150,6 +152,16 @@ class DocumentService {
             table: "documents",
             id: id,
             values: ["user_notes": notes]
+        )
+    }
+
+    /// Renames a save. The stored PDF prints the old title, so it's cleared and
+    /// made again the next time it's opened.
+    func updateTitle(_ id: UUID, title: String) async throws {
+        try await supabase.update(
+            table: "documents",
+            id: id,
+            values: ["title": title, "pdf_url": NSNull()]
         )
     }
 

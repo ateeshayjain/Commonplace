@@ -29,6 +29,7 @@ class LibraryViewModel: ObservableObject {
 
     private let documentService = DocumentService.shared
     private var deletionObserver: NSObjectProtocol?
+    private var updateObserver: NSObjectProtocol?
 
     init() {
         deletionObserver = NotificationCenter.default.addObserver(
@@ -37,10 +38,23 @@ class LibraryViewModel: ObservableObject {
             guard let id = note.object as? UUID else { return }
             Task { @MainActor in self?.removeDocument(id: id) }
         }
+        updateObserver = NotificationCenter.default.addObserver(
+            forName: .documentUpdated, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let document = note.object as? Document else { return }
+            Task { @MainActor in self?.replaceDocument(document) }
+        }
     }
 
     deinit {
         if let deletionObserver { NotificationCenter.default.removeObserver(deletionObserver) }
+        if let updateObserver { NotificationCenter.default.removeObserver(updateObserver) }
+    }
+
+    /// Show an edit made elsewhere (e.g. a new title from its detail screen) without a reload.
+    func replaceDocument(_ document: Document) {
+        if let index = documents.firstIndex(where: { $0.id == document.id }) { documents[index] = document }
+        if let index = filteredDocuments.firstIndex(where: { $0.id == document.id }) { filteredDocuments[index] = document }
     }
 
     /// Drop a document deleted elsewhere (e.g. from its detail screen) without a reload.

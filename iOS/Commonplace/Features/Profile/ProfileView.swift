@@ -500,6 +500,9 @@ struct CategoriesSettingsView: View {
 struct WeeklySummaryView: View {
     @ObservedObject var viewModel: ProfileViewModel
     @ObservedObject private var savedQuotes = SavedQuoteService.shared
+    /// Days open in History. Starts with the latest day open, the rest folded
+    @State private var expandedDays: Set<Date> = []
+    @State private var choseDefaultDay = false
 
     /// Quotes bookmarked in the same 7-day window, newest first
     private var weeklyQuotes: [SavedQuote] {
@@ -579,22 +582,32 @@ struct WeeklySummaryView: View {
                 }
             }
 
-            if viewModel.weeklyDocuments.isEmpty {
-                Section("Saved This Week") {
+            Section("History") {
+                if viewModel.weeklyDocuments.isEmpty {
                     Text("Nothing saved in the last 7 days")
                         .font(.cpBody)
                         .foregroundColor(.cpTextSecondary)
-                }
-            } else {
-                ForEach(viewModel.weeklyDocumentsByDay, id: \.day) { group in
-                    Section(Self.dayTitle(group.day)) {
-                        ForEach(group.documents) { document in
-                            // Same link style as the rest of Profile's stack: a value link
-                            // here, under a destination link, bounces straight back
-                            NavigationLink {
-                                DocumentDetailView(document: document)
-                            } label: {
-                                savedRow(document)
+                } else {
+                    ForEach(viewModel.weeklyDocumentsByDay, id: \.day) { group in
+                        DisclosureGroup(isExpanded: expandedBinding(for: group.day)) {
+                            ForEach(group.documents) { document in
+                                // Same link style as the rest of Profile's stack: a value link
+                                // here, under a destination link, bounces straight back
+                                NavigationLink {
+                                    DocumentDetailView(document: document)
+                                } label: {
+                                    savedRow(document)
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(Self.dayTitle(group.day))
+                                    .font(.cpHeadline)
+                                    .foregroundColor(.cpText)
+                                Spacer()
+                                Text(group.documents.count == 1 ? "1 save" : "\(group.documents.count) saves")
+                                    .font(.cpSubhead)
+                                    .foregroundColor(.cpTextSecondary)
                             }
                         }
                     }
@@ -605,8 +618,21 @@ struct WeeklySummaryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await viewModel.loadStats()
+            if !choseDefaultDay, let latest = viewModel.weeklyDocumentsByDay.first?.day {
+                expandedDays = [latest]
+                choseDefaultDay = true
+            }
             await savedQuotes.load()
         }
+    }
+
+    private func expandedBinding(for day: Date) -> Binding<Bool> {
+        Binding(
+            get: { expandedDays.contains(day) },
+            set: { isOpen in
+                if isOpen { expandedDays.insert(day) } else { expandedDays.remove(day) }
+            }
+        )
     }
 
     /// Saves per day for the window, one bar per day with its count above it

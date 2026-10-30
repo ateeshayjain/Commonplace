@@ -74,6 +74,30 @@ class DocumentDetailViewModel: ObservableObject {
         }
     }
 
+    /// Renames the save; an empty or unchanged title is ignored
+    func updateTitle(_ newTitle: String) {
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != document.title else { return }
+
+        let previous = document
+        document.title = title
+        document.pdfUrl = nil
+        NotificationCenter.default.post(name: .documentUpdated, object: document)
+        guard AuthService.shared.currentUser?.email != "demo@commonplace.app" else { return }
+
+        Task {
+            do {
+                try await documentService.updateTitle(document.id, title: title)
+                HapticManager.saveSuccess()
+            } catch {
+                document = previous
+                NotificationCenter.default.post(name: .documentUpdated, object: previous)
+                self.error = error
+                HapticManager.error()
+            }
+        }
+    }
+
     func updateNotes(_ notes: String) {
         Task {
             do {

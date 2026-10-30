@@ -19,7 +19,7 @@ struct Document: Identifiable, Codable, Hashable {
     let authorAvatarUrl: String?
 
     // Content
-    let title: String
+    var title: String
     let subtitle: String?
     let bodyPlain: String
     let wordCount: Int?
@@ -53,7 +53,7 @@ struct Document: Identifiable, Codable, Hashable {
     var metadata: DocumentMetadata?
 
     // Output
-    let pdfUrl: String?
+    var pdfUrl: String?
     let pdfVersion: Int?
     let thumbnailUrl: String?
     let screenshotUrl: String?
