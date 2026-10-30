@@ -346,6 +346,18 @@ async function summariseWaiting(supabase: any, userId: string, documentId: strin
   const started: string[] = [];
   let limitReached = false;
   for (const doc of waiting ?? []) {
+    // Readers can edit their own rows, metadata included, and the downloads
+    // below run with the service role: check stored paths and URLs again
+    const isScreenshots = doc.source_type === 'screenshot';
+    const paths = isScreenshots ? screenshotPaths(doc.metadata?.screenshotPaths, userId) : null;
+    if (isScreenshots && !paths) {
+      console.log(`Waiting save ${doc.id} has invalid screenshot paths; skipped`);
+      continue;
+    }
+    const pendingImages = Array.isArray(doc.metadata?.pendingImages)
+      ? doc.metadata.pendingImages.filter((url: unknown): url is string => typeof url === 'string').slice(0, 10)
+      : [];
+
     // Take the document first so two taps (or two devices) can't summarise it twice
     const { data: taken } = await supabase
       .from('documents')
@@ -363,9 +375,9 @@ async function summariseWaiting(supabase: any, userId: string, documentId: strin
     }
 
     const autoCategorise = (doc.user_categories ?? []).length === 0;
-    const work = doc.source_type === 'screenshot'
-      ? processScreenshots(supabase, userId, doc.id, doc.metadata?.screenshotPaths ?? [], autoCategorise, claim)
-      : enrichStoredText(supabase, userId, doc.id, doc.title, doc.body_plain, doc.metadata?.pendingImages ?? [], autoCategorise, claim, true)
+    const work = paths
+      ? processScreenshots(supabase, userId, doc.id, paths, autoCategorise, claim)
+      : enrichStoredText(supabase, userId, doc.id, doc.title, doc.body_plain, pendingImages, autoCategorise, claim, true)
           .catch(async (e) => {
             console.error('Summarising a waiting save failed:', e);
             await markWaiting(supabase, doc.id);
@@ -452,7 +464,7 @@ async function processScreenshots(
         .eq('id', documentId);
     }
 
-    const images = await downloadScreenshots(supabase, paths);
+    const images = await downloadScreenshots(supabase, userId, paths);
     if (images.length === 0) {
       throw new Error('The screenshots could not be read');
     }
@@ -501,8 +513,12 @@ async function processScreenshots(
   }
 }
 
-// Paths were checked by screenshotPaths: the caller's folder only
-async function downloadScreenshots(supabase: any, paths: string[]): Promise<ImageInput[]> {
+// Paths were checked by screenshotPaths: the caller's folder only. Checked
+// again here, since this reads storage with the service role.
+async function downloadScreenshots(supabase: any, userId: string, paths: string[]): Promise<ImageInput[]> {
+  if (!screenshotPaths(paths, userId)) {
+    throw new Error('Invalid screenshots');
+  }
   const images: ImageInput[] = [];
   for (const path of paths) {
     const { data, error } = await supabase.storage.from(SCREENSHOT_BUCKET).download(path);

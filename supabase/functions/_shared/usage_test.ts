@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
 import { claimUsage, loadTier, releaseUsage } from "./usage.ts";
-import { ownerOf, SubscriptionOwnedElsewhere } from "./subscriptions.ts";
+import { ownerOf, SubscriptionOwnedElsewhere, SubscriptionWithoutAccount } from "./subscriptions.ts";
 import type { SubscriptionState } from "./appstore.ts";
 
 // Just enough of supabase-js for these helpers: rpc() and a select chain ending in maybeSingle()
@@ -61,10 +61,11 @@ const state = (appAccountToken: string | null): SubscriptionState => ({
   appAccountToken,
 });
 
-Deno.test("ownerOf: the stored owner wins, then Apple's appAccountToken, then the caller", async () => {
+Deno.test("ownerOf: the stored owner wins, then Apple's appAccountToken", async () => {
   assertEquals(await ownerOf(fakeSupabase({ row: { user_id: "a" } }).client, state("b"), null), "a");
   assertEquals(await ownerOf(fakeSupabase({}).client, state("b"), null), "b");
-  assertEquals(await ownerOf(fakeSupabase({}).client, state(null), "c"), "c");
+  assertEquals(await ownerOf(fakeSupabase({}).client, state("b"), "b"), "b");
+  // A notification for a purchase nobody has linked yet
   assertEquals(await ownerOf(fakeSupabase({}).client, state(null), null), null);
   // Token case doesn't matter (Swift UUIDs are upper case, Postgres lower case)
   assertEquals(await ownerOf(fakeSupabase({}).client, state("abc"), "ABC"), "abc");
@@ -73,4 +74,10 @@ Deno.test("ownerOf: the stored owner wins, then Apple's appAccountToken, then th
 Deno.test("ownerOf: restoring someone else's subscription on another account is refused", async () => {
   await assertRejects(() => ownerOf(fakeSupabase({ row: { user_id: "a" } }).client, state(null), "b"), SubscriptionOwnedElsewhere);
   await assertRejects(() => ownerOf(fakeSupabase({}).client, state("a"), "b"), SubscriptionOwnedElsewhere);
+});
+
+Deno.test("ownerOf: a purchase without an account token isn't linked to whoever asks first", async () => {
+  await assertRejects(() => ownerOf(fakeSupabase({}).client, state(null), "c"), SubscriptionWithoutAccount);
+  // Once support has linked it, its owner can verify it
+  assertEquals(await ownerOf(fakeSupabase({ row: { user_id: "c" } }).client, state(null), "c"), "c");
 });

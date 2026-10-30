@@ -19,6 +19,7 @@ import {
   refreshUserTier,
   storeSubscription,
   SubscriptionOwnedElsewhere,
+  SubscriptionWithoutAccount,
   type SubscriptionDetails,
 } from '../_shared/subscriptions.ts';
 import { usageThisMonth } from '../_shared/usage.ts';
@@ -89,6 +90,7 @@ serve(async (req) => {
         await ownerOf(supabase, state, user.id);
       } catch (e) {
         if (e instanceof SubscriptionOwnedElsewhere) return refuse(409, 'owned_elsewhere', e.message);
+        if (e instanceof SubscriptionWithoutAccount) return refuse(409, 'no_account', e.message);
         throw e;
       }
       await storeSubscription(supabase, user.id, state);

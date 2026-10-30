@@ -14,10 +14,18 @@ export class SubscriptionOwnedElsewhere extends Error {
   }
 }
 
+// A purchase made outside the app (an offer code redeemed in the App Store)
+// carries no account; linking it by "first to claim" would let anyone who
+// learns a transaction id take it over, so support links these by hand
+export class SubscriptionWithoutAccount extends Error {
+  constructor() {
+    super("This purchase isn't linked to a Sangrah account yet. Please contact support to link it.");
+  }
+}
+
 // Who a subscription belongs to: whoever it is already stored for, else the
-// account Apple's record names (appAccountToken), else `claimant` (a purchase
-// made without a token, e.g. restored from before tokens were set). Throws
-// when the claimant isn't the owner.
+// account Apple's record names (appAccountToken, set by the app at purchase).
+// With a claimant (verify-purchase), throws unless the claimant is that owner.
 export async function ownerOf(
   supabase: SupabaseClient,
   state: SubscriptionState,
@@ -28,9 +36,10 @@ export async function ownerOf(
     .select('user_id')
     .eq('original_transaction_id', state.originalTransactionId)
     .maybeSingle();
-  const owner: string | null = stored?.user_id ?? state.appAccountToken ?? claimant;
-  if (claimant && owner && owner.toLowerCase() !== claimant.toLowerCase()) {
-    throw new SubscriptionOwnedElsewhere();
+  const owner: string | null = stored?.user_id ?? state.appAccountToken;
+  if (claimant) {
+    if (!owner) throw new SubscriptionWithoutAccount();
+    if (owner.toLowerCase() !== claimant.toLowerCase()) throw new SubscriptionOwnedElsewhere();
   }
   return owner;
 }
