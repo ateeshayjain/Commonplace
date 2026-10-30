@@ -53,12 +53,14 @@ class LibraryViewModel: ObservableObject {
 
     /// Show an edit made elsewhere (e.g. a new title from its detail screen) without a reload.
     func replaceDocument(_ document: Document) {
+        WidgetQuoteSync.shared.documentsLoaded([document])
         if let index = documents.firstIndex(where: { $0.id == document.id }) { documents[index] = document }
         if let index = filteredDocuments.firstIndex(where: { $0.id == document.id }) { filteredDocuments[index] = document }
     }
 
     /// Drop a document deleted elsewhere (e.g. from its detail screen) without a reload.
     func removeDocument(id: UUID) {
+        WidgetQuoteSync.shared.documentDeleted(id)
         documents.removeAll { $0.id == id }
         filteredDocuments.removeAll { $0.id == id }
     }
@@ -116,6 +118,7 @@ class LibraryViewModel: ObservableObject {
                 documents = try await documentService.fetchDocuments(category: category)
             }
 
+            WidgetQuoteSync.shared.documentsLoaded(documents)
             applyFilters()
         } catch {
             self.error = error

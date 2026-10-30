@@ -63,6 +63,13 @@
 		A1000053 /* SharedAuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000054 /* SharedAuthStore.swift */; };
 		A1000054 /* SharedAuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000054 /* SharedAuthStore.swift */; };
 		A1000055 /* CommonplaceShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C1000002 /* CommonplaceShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A1000070 /* SangrahWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000070 /* SangrahWidget.swift */; };
+		A1000071 /* WidgetQuote.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000071 /* WidgetQuote.swift */; };
+		A1000072 /* WidgetQuote.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000071 /* WidgetQuote.swift */; };
+		A1000073 /* BrandColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000073 /* BrandColors.swift */; };
+		A1000074 /* BrandColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000073 /* BrandColors.swift */; };
+		A1000075 /* WidgetQuoteSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000075 /* WidgetQuoteSync.swift */; };
+		A1000076 /* SangrahWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C1000003 /* SangrahWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,6 +79,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = F1000010;
 			remoteInfo = CommonplaceShareExtension;
+		};
+		F1000044 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = H1000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F1000040;
+			remoteInfo = SangrahWidget;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -83,6 +97,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				A1000055 /* CommonplaceShareExtension.appex in Embed Foundation Extensions */,
+				A1000076 /* SangrahWidget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -149,6 +164,13 @@
 		B1000054 /* SharedAuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAuthStore.swift; sourceTree = "<group>"; };
 		C1000001 /* Commonplace.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Commonplace.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1000002 /* CommonplaceShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CommonplaceShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000070 /* SangrahWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SangrahWidget.swift; sourceTree = "<group>"; };
+		B1000071 /* WidgetQuote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetQuote.swift; sourceTree = "<group>"; };
+		B1000072 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B1000073 /* BrandColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandColors.swift; sourceTree = "<group>"; };
+		B1000074 /* SangrahWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SangrahWidget.entitlements; sourceTree = "<group>"; };
+		B1000075 /* WidgetQuoteSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetQuoteSync.swift; sourceTree = "<group>"; };
+		C1000003 /* SangrahWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SangrahWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -160,6 +182,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D1000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D1000003 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -192,6 +221,8 @@
 			children = (
 				E1000002 /* Commonplace */,
 				E1000050 /* CommonplaceShareExtension */,
+				E1000060 /* SangrahWidget */,
+				E1000061 /* Shared */,
 				E1000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -216,6 +247,7 @@
 			children = (
 				C1000001 /* Commonplace.app */,
 				C1000002 /* CommonplaceShareExtension.appex */,
+				C1000003 /* SangrahWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -259,6 +291,7 @@
 			isa = PBXGroup;
 			children = (
 				B1000023 /* Colors.swift */,
+				B1000073 /* BrandColors.swift */,
 				B1000024 /* Typography.swift */,
 				B1000025 /* Spacing.swift */,
 				E1000018 /* Components */,
@@ -307,6 +340,7 @@
 				B1000009 /* DocumentService.swift */,
 				B1000064 /* SavedQuoteService.swift */,
 				B1000068 /* CategoryService.swift */,
+				B1000075 /* WidgetQuoteSync.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -418,6 +452,24 @@
 			path = CommonplaceShareExtension;
 			sourceTree = "<group>";
 		};
+		E1000060 /* SangrahWidget */ = {
+			isa = PBXGroup;
+			children = (
+				B1000070 /* SangrahWidget.swift */,
+				B1000072 /* Info.plist */,
+				B1000074 /* SangrahWidget.entitlements */,
+			);
+			path = SangrahWidget;
+			sourceTree = "<group>";
+		};
+		E1000061 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B1000071 /* WidgetQuote.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -434,6 +486,7 @@
 			);
 			dependencies = (
 				F1000020 /* PBXTargetDependency */,
+				F1000043 /* PBXTargetDependency */,
 			);
 			name = Commonplace;
 			productName = Commonplace;
@@ -457,6 +510,23 @@
 			productReference = C1000002 /* CommonplaceShareExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		F1000040 /* SangrahWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G1000020 /* Build configuration list for PBXNativeTarget "SangrahWidget" */;
+			buildPhases = (
+				F1000041 /* Sources */,
+				D1000003 /* Frameworks */,
+				F1000042 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SangrahWidget;
+			productName = SangrahWidget;
+			productReference = C1000003 /* SangrahWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -471,6 +541,9 @@
 						CreatedOnToolsVersion = 15.0;
 					};
 					F1000010 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					F1000040 = {
 						CreatedOnToolsVersion = 15.0;
 					};
 				};
@@ -490,6 +563,7 @@
 			targets = (
 				F1000001 /* Commonplace */,
 				F1000010 /* CommonplaceShareExtension */,
+				F1000040 /* SangrahWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -504,6 +578,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F1000012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1000042 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -564,6 +645,9 @@
 				A1000066 /* QuotesViewModel.swift in Sources */,
 				A1000065 /* QuotesView.swift in Sources */,
 				A1000064 /* SavedQuoteService.swift in Sources */,
+				A1000072 /* WidgetQuote.swift in Sources */,
+				A1000073 /* BrandColors.swift in Sources */,
+				A1000075 /* WidgetQuoteSync.swift in Sources */,
 				A1000068 /* CategoryService.swift in Sources */,
 				A1000063 /* SavedQuote.swift in Sources */,
 				A1000061 /* QuoteCard.swift in Sources */,
@@ -581,6 +665,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F1000041 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000070 /* SangrahWidget.swift in Sources */,
+				A1000071 /* WidgetQuote.swift in Sources */,
+				A1000074 /* BrandColors.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -588,6 +682,11 @@
 			isa = PBXTargetDependency;
 			target = F1000010 /* CommonplaceShareExtension */;
 			targetProxy = F1000021 /* PBXContainerItemProxy */;
+		};
+		F1000043 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F1000040 /* SangrahWidget */;
+			targetProxy = F1000044 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -817,6 +916,54 @@
 			};
 			name = Release;
 		};
+		I1000020 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SangrahWidget/SangrahWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 26;
+				DEVELOPMENT_TEAM = 3M5BRKQ345;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SangrahWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.commonplace.ios.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		I1000021 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SangrahWidget/SangrahWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 26;
+				DEVELOPMENT_TEAM = 3M5BRKQ345;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SangrahWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.commonplace.ios.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -843,6 +990,15 @@
 			buildConfigurations = (
 				I1000010 /* Debug */,
 				I1000011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G1000020 /* Build configuration list for PBXNativeTarget "SangrahWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				I1000020 /* Debug */,
+				I1000021 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

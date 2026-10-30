@@ -49,6 +49,12 @@ struct ContentView: View {
                 .tag(Tab.profile)
         }
         .tint(.cpTint)
+        // The quote widget opens commonplace://quotes
+        .onOpenURL { url in
+            if url.scheme == "commonplace", url.host == "quotes" {
+                selectedTab = .quotes
+            }
+        }
     }
 }
 

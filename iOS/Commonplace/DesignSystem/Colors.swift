@@ -32,11 +32,8 @@ extension Color {
     static let cpTint = Color("AccentColor")
     static let cpAccent = Color("AccentColor")
 
-    /// Brand palette from the app icon. Use for marketing surfaces and the
-    /// sign-in screen only; everyday UI stays on semantic tokens.
-    static let cpBrandNavy = Color(hex: "#1C2140")
-    static let cpBrandCream = Color(hex: "#F4EDE0")
-    static let cpBrandRibbon = Color(hex: "#3F51B5")
+    // Brand palette (cpBrandNavy, cpBrandCream, cpBrandRibbon): BrandColors.swift,
+    // shared with the quote widget
 
     // MARK: - Source Type Colors
 
@@ -81,34 +78,5 @@ extension SourceType {
         case .reddit: return .cpReddit
         default: return .cpTint
         }
-    }
-}
-
-// MARK: - Hex Color Initializer
-
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (255, 0, 0, 0)
-        }
-
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue:  Double(b) / 255,
-            opacity: Double(a) / 255
-        )
     }
 }

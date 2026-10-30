@@ -8,7 +8,9 @@ final class SavedQuoteService: ObservableObject {
     static let shared = SavedQuoteService()
 
     /// Newest first
-    @Published private(set) var quotes: [SavedQuote] = []
+    @Published private(set) var quotes: [SavedQuote] = [] {
+        didSet { WidgetQuoteSync.shared.bookmarksChanged(quotes) }
+    }
     @Published private(set) var isLoading = false
     @Published var error: Error?
 

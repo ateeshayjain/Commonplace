@@ -211,6 +211,7 @@ class AuthService: NSObject, ObservableObject {
         currentUser = nil
         isAuthenticated = false
         SharedAuthStore.clear()
+        WidgetQuoteSync.shared.clear()
     }
 
     /// Deletes the account and everything in it on the server (delete-account),
