@@ -24,6 +24,8 @@ final class WidgetQuoteSync {
     }
 
     func bookmarksChanged(_ quotes: [SavedQuote]) {
+        // A late rollback after sign-out mustn't put the old account back on the home screen
+        guard AuthService.shared.isAuthenticated else { return }
         bookmarks = quotes.compactMap { saved in
             guard let document = saved.document else { return nil }
             return Self.widgetQuote(
@@ -37,6 +39,7 @@ final class WidgetQuoteSync {
 
     /// Adds or refreshes the Key Idea of each save
     func documentsLoaded(_ documents: [Document]) {
+        guard AuthService.shared.isAuthenticated else { return }
         for document in documents {
             guard let idea = ShareableQuote.all(for: document).first(where: { !$0.isVerbatim }) else {
                 keyIdeas[document.id] = nil

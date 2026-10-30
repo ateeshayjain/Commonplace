@@ -24,6 +24,12 @@ final class SavedQuoteService: ObservableObject {
 
     private init() {}
 
+    /// Drops the signed-out account's quotes from memory
+    func reset() {
+        quotes = []
+        loadedUserId = nil
+    }
+
     // MARK: - Reading
 
     func load(force: Bool = false) async {
@@ -112,10 +118,13 @@ final class SavedQuoteService: ObservableObject {
         quotes.remove(at: index)
         guard !isDemo else { return }
 
+        let owner = loadedUserId
         Task {
             do {
                 try await supabase.delete(from: "saved_quotes", id: saved.id)
             } catch {
+                // Only put it back for the account it came from
+                guard loadedUserId == owner else { return }
                 quotes.insert(saved, at: min(index, quotes.count))
                 self.error = error
             }
