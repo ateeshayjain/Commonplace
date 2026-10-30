@@ -1,9 +1,12 @@
 import SwiftUI
+import Charts
 
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
     @StateObject private var viewModel = ProfileViewModel()
     @State private var showingSignOutAlert = false
+    @State private var showingContactOptions = false
+    @State private var showingCopiedAddress = false
 
     var body: some View {
         NavigationStack {
@@ -62,7 +65,7 @@ struct ProfileView: View {
                 // Stats - Now using real data!
                 Section("Library Stats") {
                     StatsRow(icon: "doc.text", title: "Documents Saved", value: "\(viewModel.documentCount)")
-                    StatsRow(icon: "clock", title: "Total Reading Time", value: viewModel.formattedReadingTime)
+                    StatsRow(icon: "clock", title: "Est. Reading Time", value: viewModel.formattedReadingTime)
                     StatsRow(icon: "calendar", title: "This Week", value: "\(viewModel.documentsThisWeek) saved")
                 }
 
@@ -79,7 +82,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Your Reading Insights")
                                     .font(.cpBody)
-                                Text("See what you read this week")
+                                Text("See what you saved this week")
                                     .font(.cpCaption1)
                                     .foregroundColor(.cpTextSecondary)
                             }
@@ -90,74 +93,29 @@ struct ProfileView: View {
                 // Settings
                 Section("Settings") {
                     NavigationLink {
-                        NotificationsSettingsView()
-                    } label: {
-                        SettingsRow(icon: "bell", title: "Notifications")
-                    }
-
-                    NavigationLink {
-                        AppearanceSettingsView()
-                    } label: {
-                        SettingsRow(icon: "paintbrush", title: "Appearance")
-                    }
-
-                    NavigationLink {
                         CategoriesSettingsView(categories: $viewModel.categories)
                     } label: {
                         SettingsRow(icon: "folder", title: "Manage Categories")
                     }
                 }
 
-                // Subscription
-                Section("Subscription") {
-                    if authService.currentUser?.subscriptionTier == .free {
-                        Button {
-                            // Show upgrade sheet
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Upgrade to Pro")
-                                        .font(.cpHeadline)
-                                        .foregroundColor(.cpText)
-
-                                    Text("Unlimited saves, AI features & more")
-                                        .font(.cpFootnote)
-                                        .foregroundColor(.cpTextSecondary)
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(.cpTextTertiary)
-                            }
-                        }
-                    } else {
-                        NavigationLink {
-                            Text("Subscription Management")
-                        } label: {
-                            SettingsRow(icon: "creditcard", title: "Manage Subscription")
-                        }
-                    }
-                }
-
                 // Support
                 Section("Support") {
                     Button {
-                        if let url = URL(string: "mailto:support@commonplace.app") {
-                            UIApplication.shared.open(url)
-                        }
+                        showingContactOptions = true
                     } label: {
                         SettingsRow(icon: "envelope", title: "Contact Support")
                     }
+                    .foregroundColor(.cpText)
 
                     NavigationLink {
-                        Text("FAQ")
+                        FAQView()
                     } label: {
                         SettingsRow(icon: "questionmark.circle", title: "FAQ")
                     }
 
                     NavigationLink {
-                        Text("Privacy Policy")
+                        PrivacyPolicyView()
                     } label: {
                         SettingsRow(icon: "lock.shield", title: "Privacy Policy")
                     }
@@ -180,7 +138,7 @@ struct ProfileView: View {
                 Section {
                     HStack {
                         Spacer()
-                        Text("Commonplace v1.0.0")
+                        Text(SupportContact.appVersion)
                             .font(.cpCaption1)
                             .foregroundColor(.cpTextTertiary)
                         Spacer()
@@ -197,10 +155,36 @@ struct ProfileView: View {
             } message: {
                 Text("Are you sure you want to sign out?")
             }
+            .confirmationDialog("Contact Support", isPresented: $showingContactOptions, titleVisibility: .visible) {
+                Button("Email in Mail") { openSupportEmail(SupportContact.mailURL) }
+                Button("Email in Gmail") { openSupportEmail(SupportContact.gmailURL) }
+                Button("Copy Email Address") { copySupportAddress() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(SupportContact.email)
+            }
+            .alert("Email Address Copied", isPresented: $showingCopiedAddress) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("\(SupportContact.email) is on your clipboard.")
+            }
             .task {
                 await viewModel.loadStats()
             }
         }
+    }
+
+    /// Opens the mail app; when it can't (Gmail not installed, Mail deleted), copies the address instead
+    private func openSupportEmail(_ url: URL?) {
+        guard let url else { return copySupportAddress() }
+        UIApplication.shared.open(url) { opened in
+            if !opened { copySupportAddress() }
+        }
+    }
+
+    private func copySupportAddress() {
+        UIPasteboard.general.string = SupportContact.email
+        showingCopiedAddress = true
     }
 }
 
@@ -212,82 +196,109 @@ class ProfileViewModel: ObservableObject {
     @Published var totalReadingMinutes: Int = 0
     @Published var documentsThisWeek: Int = 0
     @Published var categories: [Category] = Category.systemCategories
+    /// Saves from the last 7 days, newest first
     @Published var weeklyDocuments: [Document] = []
-    @Published var topCategories: [String] = []
-    @Published var topTopics: [String] = []
 
     private let documentService = DocumentService.shared
 
-    var formattedReadingTime: String {
-        if totalReadingMinutes == 0 {
-            return "0m"
-        } else if totalReadingMinutes < 60 {
-            return "\(totalReadingMinutes)m"
-        } else {
-            let hours = totalReadingMinutes / 60
-            let minutes = totalReadingMinutes % 60
-            if minutes == 0 {
-                return "\(hours)h"
-            } else {
-                return "\(hours)h \(minutes)m"
-            }
-        }
+    /// A name and how many saves carry it, for the category, topic and source lists
+    struct Tally: Identifiable {
+        let name: String
+        let count: Int
+        var id: String { name }
     }
+
+    struct SourceTally: Identifiable {
+        let type: SourceType
+        let count: Int
+        var id: String { type.rawValue }
+    }
+
+    struct DaySaves: Identifiable {
+        let day: Date
+        let count: Int
+        var id: Date { day }
+    }
+
+    /// Start of the 7-day window: midnight six days ago, so "this week" is today plus the six days before
+    static var weekStart: Date {
+        let calendar = Calendar.current
+        return calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: Date())) ?? Date()
+    }
+
+    var formattedReadingTime: String { Self.format(minutes: totalReadingMinutes) }
 
     var weeklyReadingMinutes: Int {
         weeklyDocuments.compactMap { $0.readingTimeMinutes }.reduce(0, +)
     }
 
-    var formattedWeeklyReadingTime: String {
-        let minutes = weeklyReadingMinutes
-        if minutes == 0 {
-            return "0m"
-        } else if minutes < 60 {
-            return "\(minutes)m"
-        } else {
-            let hours = minutes / 60
-            let mins = minutes % 60
-            if mins == 0 {
-                return "\(hours)h"
-            } else {
-                return "\(hours)h \(mins)m"
-            }
+    var formattedWeeklyReadingTime: String { Self.format(minutes: weeklyReadingMinutes) }
+
+    /// One entry per day of the window, oldest first, including days with no saves
+    var savesPerDay: [DaySaves] {
+        let calendar = Calendar.current
+        let counts = Dictionary(grouping: weeklyDocuments) { calendar.startOfDay(for: $0.createdAt) }
+            .mapValues(\.count)
+        return (0..<7).compactMap { offset in
+            calendar.date(byAdding: .day, value: offset, to: Self.weekStart)
         }
+        .map { DaySaves(day: $0, count: counts[$0] ?? 0) }
+    }
+
+    /// The week's saves split by day, newest day first
+    var weeklyDocumentsByDay: [(day: Date, documents: [Document])] {
+        let calendar = Calendar.current
+        return Dictionary(grouping: weeklyDocuments) { calendar.startOfDay(for: $0.createdAt) }
+            .sorted { $0.key > $1.key }
+            .map { (day: $0.key, documents: $0.value.sorted { $0.createdAt > $1.createdAt }) }
+    }
+
+    var weeklyCategories: [Tally] { Self.tally(weeklyDocuments.flatMap(\.userCategories), limit: 5) }
+
+    var weeklyTopics: [Tally] { Self.tally(weeklyDocuments.flatMap { $0.aiTopics ?? [] }, limit: 8) }
+
+    var weeklySources: [SourceTally] {
+        Dictionary(grouping: weeklyDocuments, by: \.sourceType)
+            .map { SourceTally(type: $0.key, count: $0.value.count) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.type.displayName < $1.type.displayName }
     }
 
     func loadStats() async {
-        let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-
-        // Check if demo mode
+        let documents: [Document]
         if AuthService.shared.currentUser?.email == "demo@commonplace.app" {
-            let demoDocuments = documentService.fetchDemoDocuments()
-            documentCount = demoDocuments.count
-            totalReadingMinutes = demoDocuments.compactMap { $0.readingTimeMinutes }.reduce(0, +)
-
-            weeklyDocuments = demoDocuments.filter { $0.createdAt > oneWeekAgo }
-            documentsThisWeek = weeklyDocuments.count
-
-            // Calculate top categories
-            let categoryCounts = demoDocuments.flatMap { $0.userCategories }
-                .reduce(into: [:]) { counts, cat in counts[cat, default: 0] += 1 }
-            topCategories = categoryCounts.sorted { $0.value > $1.value }.prefix(3).map { $0.key }
-
-            // Calculate top topics
-            let topicCounts = demoDocuments.flatMap { $0.aiTopics ?? [] }
-                .reduce(into: [:]) { counts, topic in counts[topic, default: 0] += 1 }
-            topTopics = topicCounts.sorted { $0.value > $1.value }.prefix(5).map { $0.key }
+            documents = documentService.fetchDemoDocuments()
         } else {
-            // Real mode - fetch from API
             do {
-                let stats = try await documentService.fetchStats()
-                documentCount = stats.totalDocuments
-                totalReadingMinutes = stats.totalReadTime
-                documentsThisWeek = stats.documentsThisWeek
-                topCategories = stats.topCategories
+                documents = try await documentService.fetchCompletedDocuments()
             } catch {
                 print("Failed to load stats: \(error)")
+                return
             }
         }
+
+        documentCount = documents.count
+        totalReadingMinutes = documents.compactMap { $0.readingTimeMinutes }.reduce(0, +)
+        let weekStart = Self.weekStart
+        weeklyDocuments = documents
+            .filter { $0.createdAt >= weekStart }
+            .sorted { $0.createdAt > $1.createdAt }
+        documentsThisWeek = weeklyDocuments.count
+    }
+
+    /// Most common first, ties alphabetical
+    private static func tally(_ names: [String], limit: Int) -> [Tally] {
+        Dictionary(names.map { ($0, 1) }, uniquingKeysWith: +)
+            .map { Tally(name: $0.key, count: $0.value) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    private static func format(minutes: Int) -> String {
+        guard minutes >= 60 else { return "\(minutes)m" }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        return rest == 0 ? "\(hours)h" : "\(hours)h \(rest)m"
     }
 }
 
@@ -336,61 +347,6 @@ struct SettingsRow: View {
 }
 
 // MARK: - Settings Views
-
-struct NotificationsSettingsView: View {
-    @State private var newArticleAlerts = true
-    @State private var weeklyDigest = true
-    @State private var readingReminders = false
-
-    var body: some View {
-        List {
-            Section("Alerts") {
-                Toggle("New Article Processed", isOn: $newArticleAlerts)
-                Toggle("Weekly Reading Digest", isOn: $weeklyDigest)
-                Toggle("Reading Reminders", isOn: $readingReminders)
-            }
-
-            Section(footer: Text("Notifications help you stay on top of your reading list.")) {
-                EmptyView()
-            }
-        }
-        .navigationTitle("Notifications")
-    }
-}
-
-struct AppearanceSettingsView: View {
-    @State private var selectedTheme = 0
-
-    var body: some View {
-        List {
-            Section("Theme") {
-                Picker("App Theme", selection: $selectedTheme) {
-                    Text("System").tag(0)
-                    Text("Light").tag(1)
-                    Text("Dark").tag(2)
-                }
-                .pickerStyle(.segmented)
-            }
-
-            Section("Reading") {
-                HStack {
-                    Text("Font Size")
-                    Spacer()
-                    Text("Medium")
-                        .foregroundColor(.cpTextSecondary)
-                }
-
-                HStack {
-                    Text("Line Spacing")
-                    Spacer()
-                    Text("Normal")
-                        .foregroundColor(.cpTextSecondary)
-                }
-            }
-        }
-        .navigationTitle("Appearance")
-    }
-}
 
 struct CategoriesSettingsView: View {
     @Binding var categories: [Category]
@@ -464,46 +420,103 @@ struct CategoriesSettingsView: View {
 
 struct WeeklySummaryView: View {
     @ObservedObject var viewModel: ProfileViewModel
+    @ObservedObject private var savedQuotes = SavedQuoteService.shared
+
+    /// Quotes bookmarked in the same 7-day window, newest first
+    private var weeklyQuotes: [SavedQuote] {
+        let start = ProfileViewModel.weekStart
+        return savedQuotes.quotes.filter { $0.createdAt >= start }
+    }
 
     var body: some View {
         List {
-            Section("This Week") {
+            Section {
+                savesChart
                 StatsRow(icon: "doc.text", title: "Saved", value: "\(viewModel.documentsThisWeek)")
-                StatsRow(icon: "clock", title: "Reading Time", value: "\(viewModel.totalReadingMinutes) min")
+                StatsRow(icon: "bookmark", title: "Quotes Bookmarked", value: "\(weeklyQuotes.count)")
+                StatsRow(icon: "clock", title: "Est. Reading Time", value: viewModel.formattedWeeklyReadingTime)
+            } header: {
+                Text("Last 7 Days")
+            } footer: {
+                Text("Reading time is the estimated length of what you saved.")
             }
 
-            if !viewModel.topCategories.isEmpty {
-                Section("Top Categories") {
-                    ForEach(viewModel.topCategories, id: \.self) { category in
-                        Text(category)
-                            .font(.cpBody)
-                    }
-                }
-            }
-
-            if !viewModel.topTopics.isEmpty {
-                Section("Top Topics") {
-                    ForEach(viewModel.topTopics, id: \.self) { topic in
-                        Text(topic)
-                            .font(.cpBody)
-                    }
-                }
-            }
-
-            Section("Saved This Week") {
-                if viewModel.weeklyDocuments.isEmpty {
-                    Text("Nothing saved yet this week")
-                        .font(.cpBody)
-                        .foregroundColor(.cpTextSecondary)
-                } else {
-                    ForEach(viewModel.weeklyDocuments) { document in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(document.title)
-                                .font(.cpBody)
-                                .lineLimit(2)
-                            Text("\(document.sourceType.displayName) · \(document.createdAt.formatted(date: .abbreviated, time: .omitted))")
+            if let latest = weeklyQuotes.first {
+                Section("Latest Quote") {
+                    VStack(alignment: .leading, spacing: CPSpacing.xs) {
+                        Text("\u{201C}\(latest.shareable.displayText)\u{201D}")
+                            .font(.cpCallout)
+                            .italic()
+                            .lineLimit(4)
+                        if let title = latest.document?.title {
+                            Text(title)
                                 .font(.cpCaption1)
                                 .foregroundColor(.cpTextSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .padding(.vertical, CPSpacing.xs)
+                }
+            }
+
+            if !viewModel.weeklyCategories.isEmpty {
+                Section("Top Categories") {
+                    ForEach(viewModel.weeklyCategories) { category in
+                        countRow(category.name, count: category.count)
+                    }
+                }
+            }
+
+            if !viewModel.weeklyTopics.isEmpty {
+                Section("Top Topics") {
+                    FlowLayout(spacing: CPSpacing.xs) {
+                        ForEach(viewModel.weeklyTopics) { topic in
+                            Text("\(topic.name) \u{00B7} \(topic.count)")
+                                .font(.cpSubhead)
+                                .foregroundColor(.cpTint)
+                                .padding(.horizontal, CPSpacing.sm)
+                                .padding(.vertical, CPSpacing.xxs)
+                                .background(Color.cpTint.opacity(0.12), in: Capsule())
+                        }
+                    }
+                    .padding(.vertical, CPSpacing.xs)
+                }
+            }
+
+            if !viewModel.weeklySources.isEmpty {
+                Section("Sources") {
+                    ForEach(viewModel.weeklySources) { source in
+                        HStack(spacing: CPSpacing.sm) {
+                            SourceIcon(type: source.type, size: 18)
+                                .frame(width: 24)
+                            Text(source.type.displayName)
+                                .font(.cpBody)
+                            Spacer()
+                            Text("\(source.count)")
+                                .font(.cpBody)
+                                .foregroundColor(.cpTextSecondary)
+                        }
+                    }
+                }
+            }
+
+            if viewModel.weeklyDocuments.isEmpty {
+                Section("Saved This Week") {
+                    Text("Nothing saved in the last 7 days")
+                        .font(.cpBody)
+                        .foregroundColor(.cpTextSecondary)
+                }
+            } else {
+                ForEach(viewModel.weeklyDocumentsByDay, id: \.day) { group in
+                    Section(Self.dayTitle(group.day)) {
+                        ForEach(group.documents) { document in
+                            // Same link style as the rest of Profile's stack: a value link
+                            // here, under a destination link, bounces straight back
+                            NavigationLink {
+                                DocumentDetailView(document: document)
+                            } label: {
+                                savedRow(document)
+                            }
                         }
                     }
                 }
@@ -513,6 +526,68 @@ struct WeeklySummaryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await viewModel.loadStats()
+            await savedQuotes.load()
         }
+    }
+
+    /// Saves per day for the window, one bar per day with its count above it
+    private var savesChart: some View {
+        Chart(viewModel.savesPerDay) { day in
+            BarMark(
+                x: .value("Day", day.day, unit: .day),
+                y: .value("Saves", day.count)
+            )
+            .foregroundStyle(Color.cpTint)
+            .cornerRadius(4)
+            .annotation(position: .top) {
+                if day.count > 0 {
+                    Text("\(day.count)")
+                        .font(.cpCaption2)
+                        .foregroundColor(.cpTextSecondary)
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day)) { _ in
+                AxisValueLabel(format: .dateTime.weekday(.narrow), centered: true)
+            }
+        }
+        .chartYAxis(.hidden)
+        .frame(height: 120)
+        .padding(.vertical, CPSpacing.xs)
+    }
+
+    private func countRow(_ name: String, count: Int) -> some View {
+        HStack {
+            Text(name)
+                .font(.cpBody)
+            Spacer()
+            Text("\(count)")
+                .font(.cpBody)
+                .foregroundColor(.cpTextSecondary)
+        }
+    }
+
+    private func savedRow(_ document: Document) -> some View {
+        HStack(alignment: .top, spacing: CPSpacing.sm) {
+            SourceIcon(type: document.sourceType, size: 16)
+                .frame(width: 20)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(document.title)
+                    .font(.cpBody)
+                    .lineLimit(2)
+                Text("\(document.sourceType.displayName) \u{00B7} \(document.createdAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.cpCaption1)
+                    .foregroundColor(.cpTextSecondary)
+            }
+        }
+    }
+
+    private static func dayTitle(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(.dateTime.weekday(.wide))
     }
 }

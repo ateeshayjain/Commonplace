@@ -259,38 +259,12 @@ class DocumentService {
 
     // MARK: - Stats
 
-    struct LibraryStats: Codable {
-        let totalDocuments: Int
-        let totalReadTime: Int
-        let documentsThisWeek: Int
-        let topCategories: [String]
-    }
-
-    func fetchStats() async throws -> LibraryStats {
-        // For now, return computed stats
-        let documents: [Document] = try await supabase.fetch(
+    /// Every finished save, newest first, for the Profile stats and the weekly summary
+    func fetchCompletedDocuments() async throws -> [Document] {
+        try await supabase.fetch(
             from: "documents",
-            filters: ["processing_status": "eq.completed"]
-        )
-
-        let totalReadTime = documents.compactMap { $0.readingTimeMinutes }.reduce(0, +)
-
-        let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        let documentsThisWeek = documents.filter { $0.createdAt > oneWeekAgo }.count
-
-        let categoryCounts = documents.flatMap { $0.userCategories }
-            .reduce(into: [:]) { counts, category in
-                counts[category, default: 0] += 1
-            }
-            .sorted { $0.value > $1.value }
-            .prefix(3)
-            .map { $0.key }
-
-        return LibraryStats(
-            totalDocuments: documents.count,
-            totalReadTime: totalReadTime,
-            documentsThisWeek: documentsThisWeek,
-            topCategories: Array(categoryCounts)
+            filters: ["processing_status": "eq.completed"],
+            order: "created_at.desc"
         )
     }
 }
