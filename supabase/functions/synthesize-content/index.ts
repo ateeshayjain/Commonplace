@@ -4,6 +4,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Anthropic, CLAUDE_MODELS, generateJSON, type ClaudeEffort } from '../_shared/claude.ts';
+import { composeLimitReached, composeRefusal, type LimitError } from '../_shared/tiers.ts';
+import { claimUsage, loadTier, releaseUsage } from '../_shared/usage.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,6 +92,13 @@ serve(async (req) => {
 
     if (docError || !documents?.length) throw new Error('Documents not found');
 
+    // Compose is Pro only, PRO_COMPOSE_PER_MONTH runs a month
+    const tier = await loadTier(supabase, user.id);
+    const refusal = composeRefusal(tier);
+    if (refusal) return limitResponse(refusal);
+    const claim = await claimUsage(supabase, user.id, 'compose', tier);
+    if (!claim) return limitResponse(composeLimitReached());
+
     // Get user's voice profile if available
     const { data: voiceProfiles } = await supabase
       .from('voice_profiles')
@@ -97,7 +106,7 @@ serve(async (req) => {
       .eq('user_id', user.id);
 
     // Perform synthesis
-    const synthesis = await synthesizeDocuments(
+    let synthesis = await synthesizeDocuments(
       documents,
       contentTypes,
       platforms,
@@ -106,6 +115,11 @@ serve(async (req) => {
       customPrompt,
       voiceProfiles || []
     );
+    if (!synthesis) {
+      // Claude didn't answer: the run doesn't count
+      await releaseUsage(supabase, claim);
+      synthesis = generateFallbackSynthesis(documents, contentTypes, platforms);
+    }
 
     return new Response(
       JSON.stringify({ success: true, synthesis }),
@@ -121,6 +135,15 @@ serve(async (req) => {
   }
 });
 
+// 402 with a code the app turns into the paywall or a "used this month" message
+function limitResponse(limit: LimitError): Response {
+  return new Response(
+    JSON.stringify({ error: limit.message, code: limit.code }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 402 }
+  );
+}
+
+// Null when Claude can't be reached or fails, so the caller can give the run back
 async function synthesizeDocuments(
   documents: any[],
   contentTypes: string[],
@@ -129,11 +152,11 @@ async function synthesizeDocuments(
   includeHashtags: boolean,
   customPrompt: string | undefined,
   voiceProfiles: any[]
-) {
+): Promise<Record<string, unknown> | null> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
-    return generateFallbackSynthesis(documents, contentTypes, platforms);
+    return null;
   }
 
   const anthropic = new Anthropic({ apiKey: anthropicApiKey });
@@ -191,7 +214,7 @@ IMPORTANT:
 
   try {
     return await generateJSON<Record<string, unknown>>(anthropic, {
-      model: CLAUDE_MODELS.deepReasoning,
+      model: CLAUDE_MODELS.standard,
       effort: effortForThinkingDepth(thinkingDepth),
       schema: SYNTHESIS_SCHEMA,
       system: systemPrompt,
@@ -199,9 +222,8 @@ IMPORTANT:
     });
   } catch (e) {
     console.error('Claude synthesis failed:', e);
+    return null;
   }
-
-  return generateFallbackSynthesis(documents, contentTypes, platforms);
 }
 
 // Deeper synthesis gets more reasoning effort (and more latency/cost)

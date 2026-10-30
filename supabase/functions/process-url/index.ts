@@ -3,12 +3,14 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { Anthropic, CLAUDE_MODELS, generateJSON, type ImageInput } from '../_shared/claude.ts';
+import { Anthropic, generateJSON, type ClaudeModel, type ImageInput } from '../_shared/claude.ts';
 import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
 import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT, fitHook } from '../_shared/generation.ts';
 import { cleanArticleMarkdown, scribdPagesToText } from '../_shared/markdown.ts';
 import { QUOTE_MAX_CHARS, QUOTE_MAX_COUNT, verbatimQuotes } from '../_shared/quotes.ts';
 import { SCREENSHOT_BUCKET, screenshotPaths } from '../_shared/screenshots.ts';
+import { saveModel } from '../_shared/tiers.ts';
+import { claimUsage, loadTier, releaseUsage, type UsageClaim } from '../_shared/usage.ts';
 
 // Supabase Edge Runtime: keeps background work alive after the response is sent
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -23,7 +25,14 @@ interface ProcessURLRequest {
   categories?: string[];
   // Storage paths of screenshots shared from Photos, in order; sent instead of url
   screenshots?: string[];
+  // Summarise one save that is waiting for a free AI credit (documents.ai_waiting)
+  documentId?: string;
+  // Summarise the caller's waiting saves, newest first (sent after upgrading to Pro)
+  resumeWaiting?: boolean;
 }
+
+// Waiting saves summarised per resumeWaiting request; the app asks again on its next launch
+const RESUME_BATCH = 10;
 
 interface ExtractedContent {
   title: string;
@@ -73,7 +82,11 @@ serve(async (req) => {
     }
 
     // Parse request
-    const { url, categories = [], screenshots }: ProcessURLRequest = await req.json();
+    const { url, categories = [], screenshots, documentId, resumeWaiting }: ProcessURLRequest = await req.json();
+
+    if (documentId !== undefined || resumeWaiting) {
+      return await summariseWaiting(supabase, user.id, documentId);
+    }
 
     if (screenshots !== undefined) {
       return await saveScreenshots(supabase, user.id, screenshots, categories);
@@ -191,24 +204,18 @@ async function processContent(
       })
       .eq('id', documentId);
 
-    // Generate AI enrichment, reusing the user's existing tags where they fit
-    const existingTags = await fetchRecentTagNames(supabase, userId);
-    const slideImages = await downloadImages(content.images ?? []);
-    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags, slideImages);
-    // Slide text read from the images becomes part of the saved body
-    if (aiEnrichment.transcribedText) {
-      const combined = `${content.bodyPlain}\n\n${aiEnrichment.transcribedText}`.trim();
-      await supabase
-        .from('documents')
-        .update({
-          body_plain: combined,
-          word_count: combined.split(/\s+/).length,
-          reading_time_minutes: Math.ceil(combined.split(/\s+/).length / 200),
-        })
-        .eq('id', documentId);
+    // Claude runs only on a credit for this month; without one the text is
+    // kept and the save waits in the Library to be summarised later
+    const claim = await claimSaveCredit(supabase, userId);
+    if (!claim) {
+      const metadata = content.metadata ?? {};
+      await markWaiting(supabase, documentId, {
+        metadata: content.images?.length ? { ...metadata, pendingImages: content.images } : metadata,
+      });
+      return;
     }
 
-    await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
+    await enrichStoredText(supabase, userId, documentId, content.title, content.bodyPlain, content.images ?? [], autoCategorise, claim);
 
   } catch (error) {
     console.error('Processing error:', error);
@@ -247,11 +254,138 @@ async function saveEnrichment(
       // (the user can still edit them).
       ...(autoCategorise ? { user_categories: aiEnrichment.categories } : {}),
       processing_status: 'completed',
+      ai_waiting: false,
       processed_at: new Date().toISOString(),
     })
     .eq('id', documentId);
 
   await attachTags(supabase, userId, documentId, aiEnrichment.tags);
+}
+
+// MARK: AI credits
+
+// One AI credit for a save, on the model for the reader's tier. Null when the
+// month's free saves are used up, and also when the check itself fails: the
+// save then waits rather than failing or running Claude unmetered.
+async function claimSaveCredit(supabase: any, userId: string): Promise<UsageClaim | null> {
+  try {
+    return await claimUsage(supabase, userId, 'save', await loadTier(supabase, userId));
+  } catch (error) {
+    console.error('AI credit check failed:', error);
+    return null;
+  }
+}
+
+// Stored and shown in the Library, without a summary until a credit is free
+async function markWaiting(supabase: any, documentId: string, fields: Record<string, unknown> = {}) {
+  await supabase
+    .from('documents')
+    .update({ ...fields, processing_status: 'completed', ai_waiting: true })
+    .eq('id', documentId);
+}
+
+// Summarises a link save's stored text (plus any slide images) on the claim's
+// model. The claim is used up only if Claude answers: otherwise it is given
+// back, and a new save gets the plain-text summary it always got while a
+// resumed one goes back to waiting.
+async function enrichStoredText(
+  supabase: any,
+  userId: string,
+  documentId: string,
+  title: string,
+  body: string,
+  imageUrls: string[],
+  autoCategorise: boolean,
+  claim: UsageClaim,
+  resuming = false
+) {
+  let enriched: Enrichment | null = null;
+  try {
+    // Reuse the user's existing tags where they fit
+    const existingTags = await fetchRecentTagNames(supabase, userId);
+    const slideImages = await downloadImages(imageUrls);
+    enriched = await generateAIEnrichment(saveModel(claim.tier), title, body, existingTags, slideImages);
+  } finally {
+    if (!enriched) await releaseUsage(supabase, claim);
+  }
+  if (!enriched && resuming) {
+    await markWaiting(supabase, documentId);
+    return;
+  }
+  const aiEnrichment = enriched ?? fallbackEnrichment(body);
+
+  // Slide text read from the images becomes part of the saved body
+  if (aiEnrichment.transcribedText) {
+    const combined = `${body}\n\n${aiEnrichment.transcribedText}`.trim();
+    await supabase
+      .from('documents')
+      .update({
+        body_plain: combined,
+        word_count: combined.split(/\s+/).length,
+        reading_time_minutes: Math.ceil(combined.split(/\s+/).length / 200),
+      })
+      .eq('id', documentId);
+  }
+
+  await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
+}
+
+// Summarises saves that were waiting for a credit: one (Summarise on the
+// save) or the newest RESUME_BATCH (after upgrading). The stored text is used
+// as is, so a link that has since gone offline still gets its summary.
+async function summariseWaiting(supabase: any, userId: string, documentId: string | undefined): Promise<Response> {
+  let query = supabase
+    .from('documents')
+    .select('id, source_type, title, body_plain, metadata, user_categories')
+    .eq('user_id', userId)
+    .eq('ai_waiting', true);
+  query = documentId ? query.eq('id', documentId) : query.order('created_at', { ascending: false }).limit(RESUME_BATCH);
+  const { data: waiting, error } = await query;
+  if (error) throw error;
+
+  const started: string[] = [];
+  let limitReached = false;
+  for (const doc of waiting ?? []) {
+    // Take the document first so two taps (or two devices) can't summarise it twice
+    const { data: taken } = await supabase
+      .from('documents')
+      .update({ ai_waiting: false })
+      .eq('id', doc.id)
+      .eq('ai_waiting', true)
+      .select('id');
+    if (!taken?.length) continue;
+
+    const claim = await claimSaveCredit(supabase, userId);
+    if (!claim) {
+      await markWaiting(supabase, doc.id);
+      limitReached = true;
+      break;
+    }
+
+    const autoCategorise = (doc.user_categories ?? []).length === 0;
+    const work = doc.source_type === 'screenshot'
+      ? processScreenshots(supabase, userId, doc.id, doc.metadata?.screenshotPaths ?? [], autoCategorise, claim)
+      : enrichStoredText(supabase, userId, doc.id, doc.title, doc.body_plain, doc.metadata?.pendingImages ?? [], autoCategorise, claim, true)
+          .catch(async (e) => {
+            console.error('Summarising a waiting save failed:', e);
+            await markWaiting(supabase, doc.id);
+          });
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(work);
+    }
+    started.push(doc.id);
+  }
+
+  if (documentId && limitReached) {
+    return new Response(
+      JSON.stringify({ error: "You've used this month's free AI saves.", code: 'monthly_limit_reached' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 402 }
+    );
+  }
+  return new Response(
+    JSON.stringify({ started, limitReached }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+  );
 }
 
 // MARK: Screenshots
@@ -298,13 +432,25 @@ async function processScreenshots(
   userId: string,
   documentId: string,
   paths: string[],
-  autoCategorise: boolean
+  autoCategorise: boolean,
+  // Set when summarising a waiting save: the credit is already taken and the
+  // save stays visible (completed) while it is read
+  resumeClaim?: UsageClaim
 ) {
+  let claim: UsageClaim | null = resumeClaim ?? null;
   try {
-    await supabase
-      .from('documents')
-      .update({ processing_status: 'extracting' })
-      .eq('id', documentId);
+    if (!claim) {
+      claim = await claimSaveCredit(supabase, userId);
+      if (!claim) {
+        // The screenshots stay in storage until a credit is free
+        await markWaiting(supabase, documentId, { title: 'Saved screenshots' });
+        return;
+      }
+      await supabase
+        .from('documents')
+        .update({ processing_status: 'extracting' })
+        .eq('id', documentId);
+    }
 
     const images = await downloadScreenshots(supabase, paths);
     if (images.length === 0) {
@@ -312,7 +458,15 @@ async function processScreenshots(
     }
 
     const existingTags = await fetchRecentTagNames(supabase, userId);
-    const aiEnrichment = await generateAIEnrichment('', '', existingTags, images, 'screenshots');
+    const aiEnrichment = await generateAIEnrichment(saveModel(claim.tier), '', '', existingTags, images, 'screenshots');
+    if (!aiEnrichment) {
+      // Claude didn't answer: keep the save and its credit for another try
+      await releaseUsage(supabase, claim);
+      claim = null;
+      await markWaiting(supabase, documentId, { title: 'Saved screenshots' });
+      return;
+    }
+    claim = null;
     const body = aiEnrichment.transcribedText ?? '';
     if (!body) {
       throw new Error('No text was found in the screenshots');
@@ -328,13 +482,14 @@ async function processScreenshots(
         body_plain: body,
         word_count: words,
         reading_time_minutes: Math.ceil(words / 200),
-        processing_status: 'enriching',
+        ...(resumeClaim ? {} : { processing_status: 'enriching' }),
       })
       .eq('id', documentId);
 
     await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
   } catch (error) {
     console.error('Screenshot processing error:', error);
+    if (claim) await releaseUsage(supabase, claim);
     await supabase
       .from('documents')
       .update({
@@ -1007,18 +1162,21 @@ function imageInstructions(images: ImageInput[], kind: ImageKind): string {
 Base everything below on the transcribed text.`;
 }
 
+// Null when Claude can't be reached or fails, so the caller can give the
+// AI credit back
 async function generateAIEnrichment(
+  model: ClaudeModel,
   title: string,
   content: string,
   existingTags: string[],
   images: ImageInput[] = [],
   kind: ImageKind = 'slides'
-): Promise<Enrichment> {
+): Promise<Enrichment | null> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
     console.log('Anthropic API key not configured, skipping AI enrichment');
-    return fallbackEnrichment(content);
+    return null;
   }
 
   try {
@@ -1026,7 +1184,7 @@ async function generateAIEnrichment(
 
     const fromScreenshots = kind === 'screenshots' && images.length > 0;
     const result = await generateJSON<Enrichment>(anthropic, {
-      model: CLAUDE_MODELS.saves,
+      model,
       effort: 'low',
       schema: fromScreenshots ? SCREENSHOT_SCHEMA : ENRICHMENT_SCHEMA,
       images,
@@ -1071,6 +1229,6 @@ Write in the language of the content.`,
     };
   } catch (e) {
     console.error('AI enrichment failed:', e);
-    return fallbackEnrichment(content);
+    return null;
   }
 }

@@ -74,3 +74,11 @@ verify_jwt = true
 [functions.synthesize-content]
 # Verify JWT tokens for authentication
 verify_jwt = true
+
+[functions.verify-purchase]
+# Verify JWT tokens for authentication
+verify_jwt = true
+
+[functions.app-store-notifications]
+# Called by Apple (App Store Server Notifications V2), not the app: no Supabase token
+verify_jwt = false

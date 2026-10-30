@@ -5,19 +5,24 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.137.0";
 
 export { Anthropic };
 
-export const CLAUDE_MODELS = {
-  // Enrichment of every save (process-url). Chosen 30 Oct 2026 after a side-by-side
-  // run on 15 real saves: close to Opus (word-for-word quotes, screenshot text,
-  // summaries) at half the cost per save
-  saves: 'claude-sonnet-5-5',
-  // Post generation, voice analysis
-  standard: 'claude-opus-5-5',
-  // Multi-document synthesis (second/third-order thinking)
-  deepReasoning: 'claude-fable-5-1',
-} as const;
+// Model ids live in models.ts (no imports, so tier logic and its tests don't load the SDK)
+import { CLAUDE_MODELS, type ClaudeModel } from './models.ts';
+export { CLAUDE_MODELS, type ClaudeModel };
 
-export type ClaudeModel = typeof CLAUDE_MODELS[keyof typeof CLAUDE_MODELS];
 export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+// Server-side refusal fallback: if a safety classifier declines, the API re-runs
+// the request on a fallback model. Haiku 5.5 has none (a fallback list is a 400),
+// so its requests go without the parameter and a refusal is final.
+export function supportsServerFallback(model: ClaudeModel): boolean {
+  return model !== CLAUDE_MODELS.freeSaves;
+}
+
+function fallbackParams(model: ClaudeModel) {
+  return supportsServerFallback(model)
+    ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+    : {};
+}
 
 interface GenerateTextOptions {
   model: ClaudeModel;
@@ -38,9 +43,7 @@ export async function generateText(
     max_tokens: maxTokens,
     system,
     output_config: { effort },
-    // If a safety classifier declines, the API re-runs the request on a fallback model
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...fallbackParams(model),
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -97,8 +100,7 @@ export async function generateJSON<T>(
       effort,
       format: { type: 'json_schema', schema },
     },
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    ...fallbackParams(model),
     messages: [{ role: 'user', content }],
   });
 
