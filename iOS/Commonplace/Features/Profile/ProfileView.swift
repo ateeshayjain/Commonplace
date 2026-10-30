@@ -100,6 +100,12 @@ struct ProfileView: View {
                     } label: {
                         SettingsRow(icon: "folder", title: "Manage Categories")
                     }
+
+                    NavigationLink {
+                        VoicePickerView()
+                    } label: {
+                        SettingsRow(icon: "headphones", title: "Listening Voice")
+                    }
                 }
 
                 // Support

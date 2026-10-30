@@ -10,6 +10,7 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 - ✅ Built: Quote cards (Key Idea + verbatim quotes, swipeable, share as image with caption), bookmarks in the Quotes tab, Save as Quote from selected text
 - ✅ Built: Clean PDFs (Read Full Article, Share, Save to Files), Weekly Summary, Edit Title, saved categories, Delete Account
 - ✅ Built: Daily Quote home-screen widget (`SangrahWidget`) with Shuffle
+- ✅ Built: Listen: saves read aloud with Apple's on-device voices (default Lee, Premium, Australian), mini player, lock-screen controls, voice and speed in Profile
 - ✅ Built: Phase 2 - Compose (multi-doc synthesis), Campaigns (social publishing), voice profiles, OAuth (Twitter/LinkedIn)
 - 🚧 Shipping to TestFlight (see Release below); not yet on the App Store
 
@@ -37,12 +38,13 @@ iOS/
 │   ├── App/           # CommonplaceApp.swift, ContentView.swift (tabs, commonplace://quotes), Config.swift
 │   ├── Core/
 │   │   ├── Models/    # Document, User, Category, SavedQuote, GeneratedAsset (Codable structs)
-│   │   ├── Services/  # Auth, Document, Supabase, SavedQuote, Category, WidgetQuoteSync, SharedAuthStore, Campaign
+│   │   ├── Services/  # Auth, Document, Supabase, SavedQuote, Category, WidgetQuoteSync, SpeechService, SharedAuthStore, Campaign
 │   │   └── Networking/# APIClient
 │   ├── Features/      # MVVM per feature
 │   │   ├── Library/   # LibraryView + LibraryViewModel + Components/ (search box matches body text)
 │   │   ├── Detail/    # DocumentDetailView + ViewModel, QuoteCard (cards, credits, share sheet), PDFViewerView
 │   │   ├── Quotes/    # QuotesView + QuotesViewModel (bookmarked quotes tab)
+│   │   ├── Listen/    # NowPlayingBar (mini player on every tab), VoicePickerView (Profile > Listening Voice)
 │   │   ├── Profile/   # ProfileView (+ Weekly Summary, Manage Categories), SupportViews (FAQ, Privacy, Contact)
 │   │   ├── Compose/   # ComposeView + ComposeViewModel (multi-doc synthesis)
 │   │   ├── Campaigns/ # CampaignView + CampaignViewModel (social publishing)
@@ -63,6 +65,7 @@ Targets: `Commonplace` (app), `CommonplaceShareExtension`, `SangrahWidget`, `Com
 - **Main Thread:** ViewModels and AuthService are `@MainActor`
 - **Auth:** `AuthService` injected via `@EnvironmentObject`
 - **Shared state:** `SavedQuoteService` and `CategoryService` are `@MainActor` singletons with optimistic changes that roll back on failure; they reset when the signed-in user changes
+- **Listen:** `SpeechService` (AVSpeechSynthesizer, free and offline; no cloud voices, by owner's choice on 30 Oct 2026) reads title, author, then paragraphs. Background playback needs `UIBackgroundModes: audio` in Info.plist; the mini player is a `safeAreaInset` on each tab root
 - **Cross-screen updates:** `NotificationCenter` `.documentDeleted` / `.documentUpdated` keep the Library list in step with the detail screen
 
 ### Data Flow

@@ -30,6 +30,7 @@ struct ContentView: View {
     private var mainTabView: some View {
         TabView(selection: $selectedTab) {
             LibraryView()
+                .safeAreaInset(edge: .bottom) { NowPlayingBar() }
                 .tabItem {
                     Label("Library", systemImage: "books.vertical")
                 }
@@ -37,12 +38,14 @@ struct ContentView: View {
 
             // Search lives in the Library's search box; the centre tab is the reader's quotes
             QuotesView()
+                .safeAreaInset(edge: .bottom) { NowPlayingBar() }
                 .tabItem {
                     Label("Quotes", systemImage: "bookmark")
                 }
                 .tag(Tab.quotes)
 
             ProfileView()
+                .safeAreaInset(edge: .bottom) { NowPlayingBar() }
                 .tabItem {
                     Label("Profile", systemImage: "person")
                 }
