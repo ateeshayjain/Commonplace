@@ -5,7 +5,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Anthropic, CLAUDE_MODELS, generateJSON, type ImageInput } from '../_shared/claude.ts';
 import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
-import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT } from '../_shared/generation.ts';
+import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT, fitHook } from '../_shared/generation.ts';
 import { cleanArticleMarkdown, scribdPagesToText } from '../_shared/markdown.ts';
 import { QUOTE_MAX_CHARS, QUOTE_MAX_COUNT, verbatimQuotes } from '../_shared/quotes.ts';
 import { SCREENSHOT_BUCKET, screenshotPaths } from '../_shared/screenshots.ts';
@@ -975,7 +975,7 @@ const SCREENSHOT_SCHEMA = {
 
 function fallbackEnrichment(content: string): Enrichment {
   return {
-    hook: content.substring(0, HOOK_MAX_CHARS),
+    hook: fitHook(content),
     summaryShort: content.substring(0, 200) + '...',
     executiveSummary: content.substring(0, 500),
     keyTakeaways: [],
@@ -1026,7 +1026,7 @@ async function generateAIEnrichment(
 
     const fromScreenshots = kind === 'screenshots' && images.length > 0;
     const result = await generateJSON<Enrichment>(anthropic, {
-      model: CLAUDE_MODELS.standard,
+      model: CLAUDE_MODELS.saves,
       effort: 'low',
       schema: fromScreenshots ? SCREENSHOT_SCHEMA : ENRICHMENT_SCHEMA,
       images,
@@ -1039,7 +1039,7 @@ Title: ${title}
 Content: ${content.substring(0, 10000)}
 `}
 Produce:
-- hook: ONE sentence, max ${HOOK_MAX_CHARS} characters, the single most striking idea. No preamble.
+- hook: ONE sentence, max ${HOOK_MAX_CHARS} characters (about 25 words), the single most striking idea. No preamble.
 - summaryShort: 2-3 sentences on the main insight.
 - executiveSummary: a markdown bullet list (5-8 bullets) of the arguments, key figures and practical implications.
 - keyTakeaways: exactly ${KEY_TAKEAWAY_COUNT} actionable takeaways, each one sentence.
@@ -1054,7 +1054,7 @@ Write in the language of the content.`,
     });
 
     return {
-      hook: result.hook.trim().substring(0, HOOK_MAX_CHARS),
+      hook: fitHook(result.hook),
       summaryShort: result.summaryShort.trim(),
       executiveSummary: result.executiveSummary.trim(),
       keyTakeaways: result.keyTakeaways.slice(0, KEY_TAKEAWAY_COUNT),

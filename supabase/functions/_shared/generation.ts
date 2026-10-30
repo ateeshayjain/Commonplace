@@ -11,6 +11,17 @@ export const CAROUSEL_SLIDE_LIMITS = { min: 5, max: 10 } as const;
 export const VIDEO_DURATION_LIMITS = { min: 15, max: 90, default: 60 } as const;
 export const DOSSIER_MAX_DOCUMENTS = 25;
 
+/** A Key Idea within HOOK_MAX_CHARS, shortened at a word boundary with an ellipsis
+ *  when the model runs long, instead of being cut mid-word */
+export function fitHook(text: string): string {
+  const hook = text.trim().replace(/\s+/g, ' ');
+  if (hook.length <= HOOK_MAX_CHARS) return hook;
+  const cut = hook.slice(0, HOOK_MAX_CHARS - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  const words = lastSpace > HOOK_MAX_CHARS / 2 ? cut.slice(0, lastSpace) : cut;
+  return words.replace(/[\s,;:\u2014\u2013-]+$/, '') + '\u2026';
+}
+
 // ============================================
 // Enums (match CHECK constraints)
 // ============================================

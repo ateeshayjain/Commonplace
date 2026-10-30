@@ -15,7 +15,7 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (th
 | Database / ORM | Prisma + PostgreSQL | **Supabase Postgres, plain SQL migrations** | RLS policies are the security model; Prisma bypasses them. PRD schema mapped in migration 004 |
 | Job queue | BullMQ (Redis) | **Supabase Queues (pgmq) + a worker Edge Function on pg_cron** | No Redis to run; queue lives in the same database. Decide in Phase 0 (see §6) |
 | File storage | S3 / Cloudflare R2 | **Supabase Storage** (`pdfs` public, `generated-assets` private + signed URLs) | Same auth and RLS as the database |
-| AI | Unspecified | **Claude Opus 5.5** (summaries, posts, tags, scripts), **Claude Fable 5.1** (multi-doc synthesis) | Set in `supabase/functions/_shared/claude.ts` |
+| AI | Unspecified | **Claude Sonnet 5.5** (save enrichment), **Claude Opus 5.5** (posts, voice analysis), **Claude Fable 5.1** (multi-doc synthesis) | Set in `supabase/functions/_shared/claude.ts`; saves moved from Opus to Sonnet on 30 Oct 2026 after a 15-save comparison |
 | Web app | Next.js | **Deferred** | iOS first; a web client can reuse the same Supabase backend later |
 
 ### PRD → codebase mapping
@@ -109,7 +109,7 @@ Generated assets ─┘                  │        └─► insert generated_a
                                      Postgres (RLS)  documents, tags, collections,
                                                      generated_assets, campaigns, ...
                                      Storage         pdfs (public), generated-assets (private)
-                                     Claude API      Opus 5.5 / Fable 5.1 via _shared/claude.ts
+                                     Claude API      Sonnet 5.5 / Opus 5.5 / Fable 5.1 via _shared/claude.ts
 ```
 
 **Async job pattern** (ingestion and every generator):

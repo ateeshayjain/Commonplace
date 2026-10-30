@@ -22,7 +22,7 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 ## Tech Stack
 - **iOS:** Swift 5.9+, SwiftUI, iOS 17+ target
 - **Backend:** Supabase (PostgreSQL + Edge Functions + Auth)
-- **AI:** Claude API — Claude Opus 5.5 (`claude-opus-5-5`) for summaries, post generation, voice analysis; Claude Fable 5.1 (`claude-fable-5-1`) for multi-doc synthesis
+- **AI:** Claude API — Claude Sonnet 5.5 (`claude-sonnet-5-5`) for save enrichment (summaries, Key Idea, quotes, tags, screenshot transcription); Claude Opus 5.5 (`claude-opus-5-5`) for post generation and voice analysis; Claude Fable 5.1 (`claude-fable-5-1`) for multi-doc synthesis
 - **Auth:** Sign in with Apple, Magic Link (OTP)
 - **OAuth:** Twitter OAuth 2.0 (PKCE), LinkedIn OAuth 2.0
 - **PDF:** pdf-lib (server-side generation)
@@ -166,7 +166,8 @@ static let supabaseAnonKey = "YOUR_SUPABASE_ANON_KEY"
 ### Claude API
 - Used in Edge Functions: `process-url`, `synthesize-content`, `generate-posts`, `analyze-style`
 - Models and SDK pin live in `supabase/functions/_shared/claude.ts` (`CLAUDE_MODELS`, `generateText`) — change them there, not per function
-  - `standard`: `claude-opus-5-5` (process-url, generate-posts, analyze-style)
+  - `saves`: `claude-sonnet-5-5` (process-url). Chosen on 30 Oct 2026 from a side-by-side run of Opus, Sonnet and Haiku on 15 real saves: Sonnet matched Opus on word-for-word quotes and screenshot text at half the cost (about 1.4¢ per article save, 4¢ per screenshot save, against Opus at 2.8¢ and 8.1¢)
+  - `standard`: `claude-opus-5-5` (generate-posts, analyze-style)
   - `deepReasoning`: `claude-fable-5-1` (synthesize-content; effort scales with `ThinkingDepth`)
 - Thinking is always on for these models: control depth with `effort`, don't send `thinking: disabled`/`budget_tokens`, `temperature`, or assistant prefill (all return 400)
 - Read text blocks by `type`, not `content[0]` (responses can start with thinking blocks)

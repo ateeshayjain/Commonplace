@@ -6,7 +6,11 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.137.0";
 export { Anthropic };
 
 export const CLAUDE_MODELS = {
-  // Summaries, post generation, voice analysis
+  // Enrichment of every save (process-url). Chosen 30 Oct 2026 after a side-by-side
+  // run on 15 real saves: close to Opus (word-for-word quotes, screenshot text,
+  // summaries) at half the cost per save
+  saves: 'claude-sonnet-5-5',
+  // Post generation, voice analysis
   standard: 'claude-opus-5-5',
   // Multi-document synthesis (second/third-order thinking)
   deepReasoning: 'claude-fable-5-1',
