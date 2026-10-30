@@ -104,7 +104,7 @@ final class CategoryService: ObservableObject {
     }
 
     /// "Design Trends" and "design-trends" are the same category
-    static func slug(for name: String) -> String {
+    nonisolated static func slug(for name: String) -> String {
         name.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }

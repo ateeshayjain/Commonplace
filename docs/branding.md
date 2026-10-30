@@ -12,14 +12,14 @@ Status: **v1, 27 October 2026.** Product name **Sangrah**, app icon and accent c
 
 ## 2. Tokens as coded
 
-Source files: `iOS/Commonplace/DesignSystem/Colors.swift`, `Typography.swift`, `Spacing.swift`.
+Source files: `iOS/Commonplace/DesignSystem/Colors.swift`, `BrandColors.swift` (brand palette and `Color(hex:)`, also compiled into the widget), `Typography.swift`, `Spacing.swift`.
 
 ### Colour
 
 | Token | Value | Use |
 |---|---|---|
 | `cpTint` / `cpAccent` | Ribbon indigo, `AccentColor` asset (#3F51B5 light / #8C9EFF dark) | Buttons, links, selected chips, tab highlight, progress |
-| `cpBrandNavy` / `cpBrandCream` / `cpBrandRibbon` | #1C2140 / #F4EDE0 / #3F51B5 | Icon palette; marketing and sign-in surfaces only |
+| `cpBrandNavy` / `cpBrandCream` / `cpBrandRibbon` | #1C2140 / #F4EDE0 / #3F51B5 | Icon palette; marketing and sign-in surfaces, quote share cards and the Daily Quote widget only |
 | `cpBackground` | `systemBackground` | Screen background |
 | `cpBackgroundSecondary` | `secondarySystemBackground` (#F2F2F7) | Cards, summary box, search field |
 | `cpText` | `label` | Primary text |
@@ -38,7 +38,7 @@ System font (SF Pro) at Apple's standard scale. No custom typeface.
 
 | Token | Size / weight | Use |
 |---|---|---|
-| `cpLargeTitle` | 34 bold | Screen titles (Library, Search, Profile) |
+| `cpLargeTitle` | 34 bold | Screen titles (Library, Quotes, Profile) |
 | `cpTitle1` | 28 bold | Document title on Detail |
 | `cpTitle2` | 22 bold | Sheet titles |
 | `cpTitle3` | 20 semibold | Hook pull-quote (italic), empty-state titles |
@@ -81,7 +81,7 @@ SF Symbols only (`Image(systemName:)`). Source types use their platform glyph or
 | Decision | Current state | Where it changes |
 |---|---|---|
 | **App icon** | **Decided 27 Oct 2026.** Three stacked cards (navy tints behind a cream card) with an indigo ribbon hanging from the top edge: "a collection, saved". 1024 × 1024 PNG at `Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png` | Replace that PNG; keep the flat, outline-free style. A monochrome outline version of the same mark is for in-app use (sign-in, Share Extension), not the icon |
-| **Accent colour** | **Revised 27 Oct 2026 (evening): indigo**, replacing the ribbon red after review on device. The icon's ribbon follows: #3F51B5 light, #8C9EFF dark (both ≥ 4.5:1 on their backgrounds). `cpTint`/`cpAccent` read the `AccentColor` asset so system controls match | `Assets.xcassets/AccentColor.colorset`; `Colors.swift` brand constants |
+| **Accent colour** | **Revised 27 Oct 2026 (evening): indigo**, replacing the ribbon red after review on device. The icon's ribbon follows: #3F51B5 light, #8C9EFF dark (both ≥ 4.5:1 on their backgrounds). `cpTint`/`cpAccent` read the `AccentColor` asset so system controls match | `Assets.xcassets/AccentColor.colorset`; `BrandColors.swift` brand constants |
 | **Name** | **Decided 27 Oct 2026: "Sangrah"** (संग्रह, "collection"). Chosen over "Bookmark" (generic, untrademarkable, crowded) and "Commonplace" (three small apps already use it in this category). App Store Connect listing name is **"Sangrah: Commonplace Book"** (record created 27 Oct 2026 from Xcode Organizer after "Sangrah", "CommonPlace" and "Sankalan" were rejected as already taken; SKU `app.commonplace.ios`). Display name and sign-in title stay "Sangrah"; "bookmark" and "commonplace book" stay as App Store subtitle/keywords. Code identifiers (bundle id `app.commonplace.ios`, App Group `group.app.commonplace`, URL scheme `commonplace://`, repo name) are unchanged until App Store submission | `Info.plist`, `AuthView.swift` done; ids in `project.pbxproj` and the Share Extension later |
 | **Mark** | Icon decided (above). Sign-in screen still uses the SF Symbol `books.vertical.fill`; replace with the outline mark as an SVG/PDF asset | `AuthView.swift`, new image asset |
 | **Hindi in the mark** | Not present | Part of the icon/wordmark brief |

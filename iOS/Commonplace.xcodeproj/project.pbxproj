@@ -32,8 +32,6 @@
 		A1000015 /* DocumentDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000015 /* DocumentDetailView.swift */; };
 		A1000016 /* DocumentDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000016 /* DocumentDetailViewModel.swift */; };
 		A1000017 /* PDFViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000017 /* PDFViewerView.swift */; };
-		A1000018 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000018 /* SearchView.swift */; };
-		A1000019 /* SearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000019 /* SearchViewModel.swift */; };
 		A1000020 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000020 /* ProfileView.swift */; };
 		A1000067 /* SupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000067 /* SupportViews.swift */; };
 		A1000021 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000021 /* OnboardingView.swift */; };
@@ -70,6 +68,11 @@
 		A1000074 /* BrandColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000073 /* BrandColors.swift */; };
 		A1000075 /* WidgetQuoteSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000075 /* WidgetQuoteSync.swift */; };
 		A1000076 /* SangrahWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C1000003 /* SangrahWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A1000080 /* QuoteTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000080 /* QuoteTextTests.swift */; };
+		A1000081 /* WidgetQuoteStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000081 /* WidgetQuoteStoreTests.swift */; };
+		A1000082 /* CategorySlugTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000082 /* CategorySlugTests.swift */; };
+		A1000083 /* WeeklySummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000083 /* WeeklySummaryTests.swift */; };
+		A1000084 /* SupportContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000084 /* SupportContactTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +89,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = F1000040;
 			remoteInfo = SangrahWidget;
+		};
+		F1000054 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = H1000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F1000001;
+			remoteInfo = Commonplace;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -130,8 +140,6 @@
 		B1000015 /* DocumentDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentDetailView.swift; sourceTree = "<group>"; };
 		B1000016 /* DocumentDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentDetailViewModel.swift; sourceTree = "<group>"; };
 		B1000017 /* PDFViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFViewerView.swift; sourceTree = "<group>"; };
-		B1000018 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
-		B1000019 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
 		B1000020 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		B1000067 /* SupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportViews.swift; sourceTree = "<group>"; };
 		B1000021 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -171,6 +179,12 @@
 		B1000074 /* SangrahWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SangrahWidget.entitlements; sourceTree = "<group>"; };
 		B1000075 /* WidgetQuoteSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetQuoteSync.swift; sourceTree = "<group>"; };
 		C1000003 /* SangrahWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SangrahWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000080 /* QuoteTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteTextTests.swift; sourceTree = "<group>"; };
+		B1000081 /* WidgetQuoteStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetQuoteStoreTests.swift; sourceTree = "<group>"; };
+		B1000082 /* CategorySlugTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySlugTests.swift; sourceTree = "<group>"; };
+		B1000083 /* WeeklySummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklySummaryTests.swift; sourceTree = "<group>"; };
+		B1000084 /* SupportContactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportContactTests.swift; sourceTree = "<group>"; };
+		C1000004 /* CommonplaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CommonplaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -189,6 +203,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D1000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D1000004 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -223,6 +244,7 @@
 				E1000050 /* CommonplaceShareExtension */,
 				E1000060 /* SangrahWidget */,
 				E1000061 /* Shared */,
+				E1000070 /* CommonplaceTests */,
 				E1000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -248,6 +270,7 @@
 				C1000001 /* Commonplace.app */,
 				C1000002 /* CommonplaceShareExtension.appex */,
 				C1000003 /* SangrahWidget.appex */,
+				C1000004 /* CommonplaceTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -278,7 +301,6 @@
 				E1000013 /* Library */,
 				E1000014 /* Detail */,
 				E1000051 /* Quotes */,
-				E1000015 /* Search */,
 				E1000016 /* Profile */,
 				E1000017 /* Onboarding */,
 				309324102F307D6B00E2DF1F /* Campaigns */,
@@ -383,15 +405,6 @@
 			path = Quotes;
 			sourceTree = "<group>";
 		};
-		E1000015 /* Search */ = {
-			isa = PBXGroup;
-			children = (
-				B1000018 /* SearchView.swift */,
-				B1000019 /* SearchViewModel.swift */,
-			);
-			path = Search;
-			sourceTree = "<group>";
-		};
 		E1000016 /* Profile */ = {
 			isa = PBXGroup;
 			children = (
@@ -470,6 +483,18 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		E1000070 /* CommonplaceTests */ = {
+			isa = PBXGroup;
+			children = (
+				B1000080 /* QuoteTextTests.swift */,
+				B1000081 /* WidgetQuoteStoreTests.swift */,
+				B1000082 /* CategorySlugTests.swift */,
+				B1000083 /* WeeklySummaryTests.swift */,
+				B1000084 /* SupportContactTests.swift */,
+			);
+			path = CommonplaceTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -527,6 +552,24 @@
 			productReference = C1000003 /* SangrahWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		F1000050 /* CommonplaceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = G1000030 /* Build configuration list for PBXNativeTarget "CommonplaceTests" */;
+			buildPhases = (
+				F1000051 /* Sources */,
+				D1000004 /* Frameworks */,
+				F1000052 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F1000053 /* PBXTargetDependency */,
+			);
+			name = CommonplaceTests;
+			productName = CommonplaceTests;
+			productReference = C1000004 /* CommonplaceTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -546,6 +589,10 @@
 					F1000040 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					F1000050 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = F1000001;
+					};
 				};
 			};
 			buildConfigurationList = G1000002 /* Build configuration list for PBXProject "Commonplace" */;
@@ -564,6 +611,7 @@
 				F1000001 /* Commonplace */,
 				F1000010 /* CommonplaceShareExtension */,
 				F1000040 /* SangrahWidget */,
+				F1000050 /* CommonplaceTests */,
 			);
 		};
 /* End PBXProject section */
@@ -585,6 +633,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F1000042 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1000052 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -622,8 +677,6 @@
 				A1000016 /* DocumentDetailViewModel.swift in Sources */,
 				A1000017 /* PDFViewerView.swift in Sources */,
 				309324142F307DBD00E2DF1F /* CampaignService.swift in Sources */,
-				A1000018 /* SearchView.swift in Sources */,
-				A1000019 /* SearchViewModel.swift in Sources */,
 				A1000020 /* ProfileView.swift in Sources */,
 				A1000067 /* SupportViews.swift in Sources */,
 				A1000021 /* OnboardingView.swift in Sources */,
@@ -675,6 +728,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F1000051 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000080 /* QuoteTextTests.swift in Sources */,
+				A1000081 /* WidgetQuoteStoreTests.swift in Sources */,
+				A1000082 /* CategorySlugTests.swift in Sources */,
+				A1000083 /* WeeklySummaryTests.swift in Sources */,
+				A1000084 /* SupportContactTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -687,6 +752,11 @@
 			isa = PBXTargetDependency;
 			target = F1000040 /* SangrahWidget */;
 			targetProxy = F1000044 /* PBXContainerItemProxy */;
+		};
+		F1000053 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F1000001 /* Commonplace */;
+			targetProxy = F1000054 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -964,6 +1034,42 @@
 			};
 			name = Release;
 		};
+		I1000030 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 27;
+				DEVELOPMENT_TEAM = 3M5BRKQ345;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.commonplace.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Commonplace.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Commonplace";
+			};
+			name = Debug;
+		};
+		I1000031 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 27;
+				DEVELOPMENT_TEAM = 3M5BRKQ345;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.commonplace.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Commonplace.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Commonplace";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -999,6 +1105,15 @@
 			buildConfigurations = (
 				I1000020 /* Debug */,
 				I1000021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		G1000030 /* Build configuration list for PBXNativeTarget "CommonplaceTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				I1000030 /* Debug */,
+				I1000031 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

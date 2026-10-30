@@ -34,55 +34,61 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (th
 
 ---
 
-## 2. Current status (as of 2026-10-24)
+## 2. Current status (as of 2026-10-30)
 
 ### By PRD module
 
 | Module | Feature | Status | Notes |
 |---|---|---|---|
-| iOS rules | Share Extension | ⚠️ Code exists, **not built** | `ShareView.swift` / `ShareViewController.swift` aren't in any Xcode target |
-| | Camera / document scanning | ❌ Missing | |
-| | Native share sheet for generated assets | ❌ Missing | |
+| iOS rules | Share Extension | ✅ Built | Links and text; up to 10 screenshots from Photos are uploaded and read in order into one save |
+| | Camera / document scanning | ❌ Missing | Screenshots cover part of the need |
+| | Native share sheet for generated assets | 🟡 Partial | Quote cards share as an image plus caption (link included); PDFs share or save to Files |
+| | Home-screen widget | ✅ Built | Daily Quote widget: a bookmark or Key Idea a day, Shuffle button, opens the Quotes tab |
 | | Offline cache | ❌ Missing | `Config.enableOfflineMode` flag exists, unused |
-| 1 Ingestion | Web / Substack | 🟡 Partial | Jina Reader extraction in `process-url`; plain text, not Markdown; images not kept |
-| | YouTube transcripts | ❌ Missing | URL detected as `youtube`, but only page text is extracted |
-| | Instagram (captions, carousel images, Reel audio) | ❌ Missing | URL detected only |
-| | Book OCR | 🟡 Schema only | `book_ocr` source type and `BookOcrMetadata` exist |
-| 2 AI | Hierarchical summary | 🟡 Partial | Short/long summary + key points exist; no `hook`; JSON parsed by regex |
-| | Auto-tagging | 🟡 Schema only | `tags` tables exist; enrichment still writes `ai_topics` JSON |
+| 1 Ingestion | Web / Substack / Medium | ✅ Built | Jina Reader, cleaned of site chrome; Scribd yields only the page snippets it shows signed-out readers |
+| | YouTube transcripts | 🟡 Partial | Title, channel and chapters via oEmbed and the player response; transcripts unsolved (paid provider is an open decision) |
+| | Instagram (captions, carousel images, Reel audio) | 🟡 Partial | Captions and carousel images from the public embed page; Reel audio missing |
+| | Book OCR | 🟡 Partial | Screenshots are transcribed by Claude into an article (`screenshot` source); no dedicated book flow |
+| 2 AI | Hierarchical summary | ✅ Built | Hook (Key Idea), short and long summary, key points, verbatim quotable lines; structured outputs |
+| | Auto-tagging | ✅ Built | `tags` + `document_tags` via `attachTags`; auto-categorised into the built-in categories |
 | | Multi-doc synthesis | ✅ Built | `synthesize-content` (Fable 5.1, depth-scaled effort); Compose UI |
-| 3 PDF | Single brief | ✅ Built | `generate-pdf` with pdf-lib |
+| 3 PDF | Single brief | ✅ Built | `generate-pdf` layout 3: Sangrah header, footer, post date and save date; made on first open or share |
 | | Multi-doc dossier with TOC | ❌ Missing | |
 | 4 Generation | Carousel | ❌ Missing | Types defined |
-| | Quote graphic | ❌ Missing | Types defined |
+| | Quote graphic | ✅ Built | Story and Post quote cards (ImageRenderer), sentence-cased, credit with source logo |
 | | Video script | ❌ Missing | Types defined |
 | | Generated video | ❌ Missing | Optional in PRD |
-| Extra | Social posting (Twitter/LinkedIn OAuth, voice profiles, campaigns) | ✅ Built | Commonplace Phase 2; keep |
+| Extra | Quotes tab and bookmarks | ✅ Built | `saved_quotes`; Save as Quote from selected article text |
+| | Weekly Summary | ✅ Built | Last 7 days: saves per day, quotes, categories, topics, sources, collapsible History |
+| | Account | ✅ Built | Edit Title, saved categories, Delete Account, FAQ, Privacy Policy, Contact Support |
+| | Social posting (Twitter/LinkedIn OAuth, voice profiles, campaigns) | ✅ Built | Commonplace Phase 2; keep |
 
 ### Infrastructure
 
 | Item | Status |
 |---|---|
-| Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | **Live.** Migrations 001–004 applied (non-destructive variant: old search fn revoked not dropped; `book_ocr` deferred to 005). All 6 Edge Functions deployed 2026-10-26 |
-| Migrations 001–004 | Written; verified on local Postgres (PGlite) including RLS checks |
-| Edge Functions | Pass `deno check`; never run against live services |
-| iOS app | **Compiles** on CI (macOS runner, iOS simulator) and locally in Xcode. Not yet run end to end |
-| `ANTHROPIC_API_KEY` secret | **Set** in the Supabase dashboard on 2026-10-27. First real enrichment still to be confirmed from the phone |
-| Tests / CI | None |
+| Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | **Live.** Migrations 001–009 applied. Edge Functions deployed: `process-url` v15, `generate-pdf` v10, `delete-account` v1, plus `synthesize-content`, `generate-posts`, `analyze-style`, `oauth-connect` |
+| iOS app | **On TestFlight**, build 27 (2026-10-30), App Store Connect record "Sangrah: Commonplace Book" |
+| `ANTHROPIC_API_KEY` secret | Set; enrichment runs on real saves |
+| Tests / CI | CI builds the app, runs 26 iOS unit tests (`CommonplaceTests`), type-checks every Edge Function and runs 24 Deno tests. No UI tests |
 
 ### Known issues and tech debt
 
 | # | Issue | Where | Phase |
 |---|---|---|---|
-| 1 | Share Extension has no Xcode target | `iOS/CommonplaceShareExtension/` | 0 |
-| 2 | Stale duplicate `DocumentDetailView` (not in project) | `iOS/Commonplace/Features/Library/DocumentDetailView.swift` | 0 |
-| 3 | `Config.swift` points at the old, inaccessible project `mliivcgiyezaltfbnpzb` | `iOS/Commonplace/App/Config.swift`, `supabase/config.toml` | 0 |
-| 4 | ~~`process-url` fires background work without `EdgeRuntime.waitUntil`~~ fixed | `supabase/functions/process-url/index.ts` | 0 |
+| 1 | ~~Share Extension has no Xcode target~~ fixed | — | 0 |
+| 2 | ~~Stale duplicate `DocumentDetailView`~~ removed, with the unused Search screen | — | 0 |
+| 3 | ~~`Config.swift` points at the old project~~ fixed | — | 0 |
+| 4 | ~~`process-url` fires background work without `EdgeRuntime.waitUntil`~~ fixed | — | 0 |
 | 5 | Some decoders use plain `.iso8601`, which fails on Postgres fractional-second timestamps | `SupabaseService.swift`, `APIClient.swift` | 0 |
-| 6 | ~~AI responses parsed with regex instead of structured outputs~~ fixed in all 4 functions | — | 2 |
+| 6 | ~~AI responses parsed with regex~~ fixed in all 4 functions | — | 2 |
 | 7 | `users` UPDATE policy lets a user change their own `subscription_tier` | migration 001 | 5 |
-| 8 | Subscription limits enforced in UI only | — | 5 |
-| 9 | No automated tests | — | 0 onward |
+| 8 | Subscription limits not enforced; Upgrade to Pro hidden until in-app purchase exists | — | 5 |
+| 9 | Unit tests only; no UI tests | `iOS/CommonplaceTests` | 0 onward |
+| 10 | Delete Account doesn't revoke the Sign in with Apple token (Apple expects it for App Store review); needs a Sign in with Apple key | `delete-account` | 5 |
+| 11 | Custom categories aren't used by auto-categorisation (it picks from the built-in list) | `process-url` | 2 |
+| 12 | The App Store Connect API key can't create profiles for new bundle ids; first upload of a new extension needs an Xcode-account export | `scripts/upload-build.sh` | 5 |
+| 13 | Not yet checked on a phone: widget Shuffle with several quotes, Delete Account end to end, category persistence | — | 5 |
 
 ---
 

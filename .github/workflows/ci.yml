@@ -32,12 +32,27 @@ jobs:
             build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
           grep -q "BUILD SUCCEEDED" build.log
 
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          # The first available iPhone simulator on this runner image
+          SIM=$(xcrun simctl list devices available -j | python3 -c "import json,sys; print(next(d['udid'] for r,ds in json.load(sys.stdin)['devices'].items() if 'iOS' in r for d in ds if d['name'].startswith('iPhone')))")
+          xcodebuild \
+            -project iOS/Commonplace.xcodeproj \
+            -scheme Commonplace \
+            -destination "platform=iOS Simulator,id=$SIM" \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee test.log | grep -E "error:|Test Case .* failed|Executed [0-9]+ tests|TEST (SUCCEEDED|FAILED)" || true
+          grep -q "TEST SUCCEEDED" test.log
+
       - name: Upload build log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-log
-          path: build.log
+          path: |
+            build.log
+            test.log
 
   edge-functions:
     name: Edge Functions typecheck

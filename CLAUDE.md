@@ -4,12 +4,14 @@
 iOS app for saving web content with AI-powered summaries. Users share URLs from any app → content gets extracted, summarized by Claude, and stored in a searchable library.
 
 **Current State:**
-- ✅ Built: Full iOS app with Library, Search, Profile, Auth flows
-- ✅ Built: Supabase backend with RLS, Edge Functions
-- ✅ Built: Share Extension for URL capture
-- ✅ Built: Phase 2 - Compose (multi-doc synthesis), Campaigns (social publishing)
-- ✅ Built: Voice profiles, OAuth connections (Twitter/LinkedIn), PDF export
-- 🚧 Pending: Actual Supabase project deployment (using demo mode)
+- ✅ Built: iOS app with Library (search reads the saved text), Quotes, Profile, Auth flows
+- ✅ Built: Supabase backend (project `gfnqjaombxxkiinxhahv`, live) with RLS, Edge Functions
+- ✅ Built: Share Extension for links and up to 10 screenshots (combined into one save)
+- ✅ Built: Quote cards (Key Idea + verbatim quotes, swipeable, share as image with caption), bookmarks in the Quotes tab, Save as Quote from selected text
+- ✅ Built: Clean PDFs (Read Full Article, Share, Save to Files), Weekly Summary, Edit Title, saved categories, Delete Account
+- ✅ Built: Daily Quote home-screen widget (`SangrahWidget`) with Shuffle
+- ✅ Built: Phase 2 - Compose (multi-doc synthesis), Campaigns (social publishing), voice profiles, OAuth (Twitter/LinkedIn)
+- 🚧 Shipping to TestFlight (see Release below); not yet on the App Store
 
 **Target Users:** Knowledge workers who save articles/threads and want AI insights.
 
@@ -30,29 +32,38 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 
 ### Folder Structure
 ```
-iOS/Commonplace/
-├── App/           # CommonplaceApp.swift, ContentView.swift, Config.swift
-├── Core/
-│   ├── Models/    # Document, User, Category (Codable structs)
-│   ├── Services/  # AuthService, DocumentService, SupabaseService, CampaignService
-│   └── Networking/# APIClient
-├── Features/      # MVVM per feature
-│   ├── Library/   # LibraryView + LibraryViewModel + Components/
-│   ├── Detail/    # DocumentDetailView + DocumentDetailViewModel
-│   ├── Search/    # SearchView + SearchViewModel
-│   ├── Profile/   # ProfileView
-│   ├── Compose/   # ComposeView + ComposeViewModel (multi-doc synthesis)
-│   ├── Campaigns/ # CampaignView + CampaignViewModel (social publishing)
-│   └── Onboarding/# AuthView, OnboardingView
-├── DesignSystem/  # Colors, Typography, Spacing, Components/
-└── Utilities/     # Extensions, HapticManager
+iOS/
+├── Commonplace/       # The app
+│   ├── App/           # CommonplaceApp.swift, ContentView.swift (tabs, commonplace://quotes), Config.swift
+│   ├── Core/
+│   │   ├── Models/    # Document, User, Category, SavedQuote, GeneratedAsset (Codable structs)
+│   │   ├── Services/  # Auth, Document, Supabase, SavedQuote, Category, WidgetQuoteSync, SharedAuthStore, Campaign
+│   │   └── Networking/# APIClient
+│   ├── Features/      # MVVM per feature
+│   │   ├── Library/   # LibraryView + LibraryViewModel + Components/ (search box matches body text)
+│   │   ├── Detail/    # DocumentDetailView + ViewModel, QuoteCard (cards, credits, share sheet), PDFViewerView
+│   │   ├── Quotes/    # QuotesView + QuotesViewModel (bookmarked quotes tab)
+│   │   ├── Profile/   # ProfileView (+ Weekly Summary, Manage Categories), SupportViews (FAQ, Privacy, Contact)
+│   │   ├── Compose/   # ComposeView + ComposeViewModel (multi-doc synthesis)
+│   │   ├── Campaigns/ # CampaignView + CampaignViewModel (social publishing)
+│   │   └── Onboarding/# AuthView, OnboardingView
+│   ├── DesignSystem/  # Colors, BrandColors (shared with the widget), Typography, Spacing, Components/
+│   └── Utilities/     # Extensions, HapticManager
+├── CommonplaceShareExtension/ # Share sheet: links and screenshots
+├── SangrahWidget/     # Daily Quote widget (WidgetKit + AppIntent shuffle)
+├── Shared/            # WidgetQuote.swift: compiled into the app and the widget
+└── CommonplaceTests/  # XCTest unit tests (hosted in the app)
 ```
+
+Targets: `Commonplace` (app), `CommonplaceShareExtension`, `SangrahWidget`, `CommonplaceTests`. The app, share extension and widget share the App Group `group.app.commonplace` (keychain session, widget quote pool).
 
 ### Key Patterns
 - **MVVM:** Views bind to `@StateObject` ViewModels
 - **Services:** Singletons via `static let shared`
 - **Main Thread:** ViewModels and AuthService are `@MainActor`
 - **Auth:** `AuthService` injected via `@EnvironmentObject`
+- **Shared state:** `SavedQuoteService` and `CategoryService` are `@MainActor` singletons with optimistic changes that roll back on failure; they reset when the signed-in user changes
+- **Cross-screen updates:** `NotificationCenter` `.documentDeleted` / `.documentUpdated` keep the Library list in step with the detail screen
 
 ### Data Flow
 ```
@@ -120,7 +131,11 @@ twitter, linkedin, linkedinArticle, article, substack, medium, youtube, podcast,
 
 ### Database Tables
 - `social_connections`: OAuth credentials per user/platform (unique constraint on user_id + platform)
-- `pdfs` storage bucket: Public bucket for generated PDFs (user-scoped upload, public read)
+- `pdfs` storage bucket: Public bucket for generated PDFs (user-scoped upload, public read). `documents.pdf_url` is cleared when a title changes; PDFs are made on first open or share, not at save time
+- `saved_quotes` (migration 007): bookmarked quotes, unique per (user, document, text)
+- `screenshots` storage bucket (migration 008): private, `{user_id}/{batch}/{n}.jpg`, JPEG only, 6 MB
+- `categories`: built-in rows have `user_id` null; readers add and delete their own (delete policy: migration 009)
+- Deleting an account (`delete-account`) removes storage files, then the `users` row (cascades to every table), then the auth user
 
 ### Sangrah Data Model (migration 004)
 The Sangrah PRD's Prisma schema is mapped onto Supabase SQL, not Prisma:
@@ -145,7 +160,8 @@ static let supabaseAnonKey = "YOUR_SUPABASE_ANON_KEY"
 - `generate-posts`: Platform-specific post generation with voice matching (3 variations per platform)
 - `analyze-style`: Analyzes user's social posts to build voice profile
 - `oauth-connect`: OAuth flow handler for Twitter/LinkedIn (PKCE support)
-- `generate-pdf`: Clean PDF generation with pdf-lib, uploads to Supabase Storage
+- `generate-pdf`: Clean PDF generation with pdf-lib, uploads to Supabase Storage (`PDF_LAYOUT_VERSION` must match `DocumentService.pdfLayoutVersion`)
+- `delete-account`: Deletes the caller's files, rows and auth user (Profile > Delete Account)
 
 ### Claude API
 - Used in Edge Functions: `process-url`, `synthesize-content`, `generate-posts`, `analyze-style`
@@ -180,6 +196,12 @@ func update(table: String, values: [String: Any])
 ### Onboarding Binding Logic
 `OnboardingView(isComplete: $showOnboarding)` — when complete, set `isComplete = false` to dismiss (binding is inverted for "show" semantics)
 
+### Navigation in Profile
+Profile's `NavigationStack` uses destination links (`NavigationLink { View() } label:`). A value link (`NavigationLink(value:)` + `navigationDestination`) inside a screen pushed by a destination link bounces straight back. Keep to one style per stack.
+
+### New targets and files
+Every new Swift file, target or scheme testable is added to `project.pbxproj` by hand (no synchronized folders). Files shared by two targets (e.g. `Shared/WidgetQuote.swift`, `DesignSystem/BrandColors.swift`) get one file reference and a build file per target, and must not depend on app-only types.
+
 ### Demo Mode Detection
 Check for demo user before API calls:
 ```swift
@@ -194,7 +216,7 @@ if AuthService.shared.currentUser?.email == "demo@commonplace.app" {
 | Agent | Scope | Files |
 |-------|-------|-------|
 | A | Library feature | Features/Library/*, DocumentService |
-| B | Search feature | Features/Search/* |
+| B | Quotes feature + widget | Features/Quotes/*, SavedQuoteService, SangrahWidget/*, Shared/* |
 | C | Profile/Settings | Features/Profile/* |
 | D | Design System | DesignSystem/* |
 | E | Backend | supabase/* |
@@ -220,3 +242,14 @@ For bug fixes:
 1. **Investigator**: Find root cause across codebase
 2. **Fixer**: Implement fix
 3. **Reviewer**: Verify fix, check for regressions
+
+## Testing
+- iOS: `xcodebuild test -project iOS/Commonplace.xcodeproj -scheme Commonplace -destination 'platform=iOS Simulator,name=<iPhone>' CODE_SIGNING_ALLOWED=NO` runs `CommonplaceTests` (quote text and credits, widget daily pick and shuffle, category slugs, Weekly Summary maths, support links). Tests use the demo documents as fixtures
+- Edge Functions: `deno test supabase/functions/_shared` and `deno check` on each `index.ts`
+- CI (`.github/workflows/ci.yml`) builds the app, runs the iOS tests, type-checks and tests the Edge Functions on every push
+
+## Release (TestFlight)
+- Bump `CURRENT_PROJECT_VERSION` everywhere in `project.pbxproj` (app, share extension, widget, tests) and `CFBundleVersion` in `iOS/Commonplace/Info.plist` (edit the text; PlistBuddy re-sorts keys)
+- `xcodebuild archive -scheme Commonplace -configuration Release -destination 'generic/platform=iOS' -allowProvisioningUpdates`, then `scripts/upload-build.sh <archive>` with `ASC_KEY_ID` / `ASC_ISSUER_ID`
+- A new bundle id (new extension) has no App Store profile yet and the API key can't create one: export once with the Xcode account (`xcodebuild -exportArchive ... -exportOptionsPlist iOS/ExportOptions.plist -allowProvisioningUpdates`, no key flags), then upload the .ipa with `xcrun altool --upload-app`
+- Production deploys (Edge Functions, migrations) need the owner's explicit go-ahead each time

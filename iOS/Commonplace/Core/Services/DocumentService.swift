@@ -68,38 +68,6 @@ class DocumentService {
         )
     }
 
-    // MARK: - Search
-
-    struct SearchResult: Codable, Identifiable, Hashable {
-        let id: UUID
-        let title: String
-        let aiSummaryShort: String?
-        let sourceType: SourceType
-        let authorName: String?
-        let createdAt: Date
-        let rank: Double
-
-        enum CodingKeys: String, CodingKey {
-            case id
-            case title
-            case aiSummaryShort = "ai_summary_short"
-            case sourceType = "source_type"
-            case authorName = "author_name"
-            case createdAt = "created_at"
-            case rank
-        }
-    }
-
-    func searchDocuments(query: String, limit: Int = 20) async throws -> [SearchResult] {
-        return try await supabase.rpc(
-            function: "search_documents",
-            params: [
-                "p_query": query,
-                "p_limit": limit
-            ]
-        )
-    }
-
     // MARK: - Save URL
 
     struct SaveURLResponse: Codable {

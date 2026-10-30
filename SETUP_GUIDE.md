@@ -117,7 +117,8 @@ Demo mode uses local sample data and doesn't require Supabase or Claude API.
 ### Demo Mode (No backend required)
 - ✅ View sample documents
 - ✅ Browse library
-- ✅ Search (local only)
+- ✅ Library search (local only)
+- ✅ Quotes tab, Weekly Summary and the Daily Quote widget
 - ✅ View document details
 - ❌ Save new URLs
 - ❌ AI summaries
