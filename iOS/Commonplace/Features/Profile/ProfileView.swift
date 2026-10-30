@@ -336,12 +336,15 @@ class ProfileViewModel: ObservableObject {
     }
 
     /// Most common first, ties alphabetical
+    /// Split into typed steps: one chained expression is too slow for older Swift type-checkers (Xcode 16 on CI)
     private static func tally(_ names: [String], limit: Int) -> [Tally] {
-        Dictionary(names.map { ($0, 1) }, uniquingKeysWith: +)
-            .map { Tally(name: $0.key, count: $0.value) }
-            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
-            .prefix(limit)
-            .map { $0 }
+        var counts: [String: Int] = [:]
+        for name in names { counts[name, default: 0] += 1 }
+        let tallies: [Tally] = counts.map { Tally(name: $0.key, count: $0.value) }
+        let sorted = tallies.sorted { (a: Tally, b: Tally) -> Bool in
+            a.count != b.count ? a.count > b.count : a.name < b.name
+        }
+        return Array(sorted.prefix(limit))
     }
 
     private static func format(minutes: Int) -> String {
