@@ -27,3 +27,4 @@ Packages/
 # Environment
 .env
 .env.*
+.claude/worktrees/

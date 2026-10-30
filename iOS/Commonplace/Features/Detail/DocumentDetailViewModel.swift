@@ -5,14 +5,44 @@ import SwiftUI
 class DocumentDetailViewModel: ObservableObject {
     @Published var document: Document
     @Published var selectedCategories: Set<String>
+    @Published var tags: [Tag] = []
     @Published var isLoading = false
     @Published var error: Error?
+    /// Set once the document is gone, so the view can close itself.
+    @Published var isDeleted = false
+    @Published var isPreparingPDF = false
+    /// A file ready to hand to the share sheet.
+    @Published var sharedFile: SharedFile?
+    /// A file ready to open in the in-app PDF reader.
+    @Published var viewedFile: SharedFile?
+
+    struct SharedFile: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
 
     private let documentService = DocumentService.shared
 
     init(document: Document) {
         self.document = document
         self.selectedCategories = Set(document.userCategories)
+    }
+
+    // MARK: - Tags
+
+    func loadTags() async {
+        // Demo mode: derive tags from the document's AI topics
+        if let user = AuthService.shared.currentUser, user.email == "demo@commonplace.app" {
+            tags = documentService.demoTags(for: [document], userId: user.id)
+            return
+        }
+
+        do {
+            tags = try await documentService.fetchTags(for: document.id)
+        } catch {
+            // Tags are supplementary; don't surface the error over the document
+            tags = []
+        }
     }
 
     // MARK: - Actions
@@ -44,6 +74,30 @@ class DocumentDetailViewModel: ObservableObject {
         }
     }
 
+    /// Renames the save; an empty or unchanged title is ignored
+    func updateTitle(_ newTitle: String) {
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty, title != document.title else { return }
+
+        let previous = document
+        document.title = title
+        document.pdfUrl = nil
+        NotificationCenter.default.post(name: .documentUpdated, object: document)
+        guard AuthService.shared.currentUser?.email != "demo@commonplace.app" else { return }
+
+        Task {
+            do {
+                try await documentService.updateTitle(document.id, title: title)
+                HapticManager.saveSuccess()
+            } catch {
+                document = previous
+                NotificationCenter.default.post(name: .documentUpdated, object: previous)
+                self.error = error
+                HapticManager.error()
+            }
+        }
+    }
+
     func updateNotes(_ notes: String) {
         Task {
             do {
@@ -51,6 +105,56 @@ class DocumentDetailViewModel: ObservableObject {
                 document.userNotes = notes
                 HapticManager.saveSuccess()
             } catch {
+                self.error = error
+                HapticManager.error()
+            }
+        }
+    }
+
+    /// Longest passage that still reads well on a share card
+    static let maxQuoteLength = 280
+
+    /// Adds a passage the reader selected to the document's quotes (and so to the
+    /// share cards) and bookmarks it. Returns the quote as stored, or nil when it
+    /// is too long to fit on a card.
+    @discardableResult
+    func saveQuote(_ selection: String) -> String? {
+        let text = selection
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !text.isEmpty, text.count <= Self.maxQuoteLength else {
+            HapticManager.error()
+            return nil
+        }
+
+        var lines = document.aiQuotableLines ?? []
+        if !lines.contains(where: { $0.caseInsensitiveCompare(text) == .orderedSame }) {
+            lines.append(text)
+        }
+        setQuotableLines(lines)
+        // Picking a line by hand is saving it, so it goes to the Quotes tab too
+        SavedQuoteService.shared.save(ShareableQuote(text: text, isVerbatim: true), in: document)
+        return text
+    }
+
+    func removeQuote(_ text: String) {
+        setQuotableLines((document.aiQuotableLines ?? []).filter { $0 != text })
+        SavedQuoteService.shared.remove(text, in: document.id)
+    }
+
+    private func setQuotableLines(_ lines: [String]) {
+        let previous = document.aiQuotableLines
+        document.aiQuotableLines = lines
+        HapticManager.saveSuccess()
+
+        // Demo documents live only in memory
+        guard AuthService.shared.currentUser?.email != "demo@commonplace.app" else { return }
+        Task {
+            do {
+                try await documentService.updateQuotableLines(document.id, lines: lines)
+            } catch {
+                document.aiQuotableLines = previous
                 self.error = error
                 HapticManager.error()
             }
@@ -71,11 +175,42 @@ class DocumentDetailViewModel: ObservableObject {
     func deleteDocument() {
         Task {
             do {
-                try await documentService.deleteDocument(document.id)
+                // Demo documents live only in memory
+                if AuthService.shared.currentUser?.email != "demo@commonplace.app" {
+                    try await documentService.deleteDocument(document.id)
+                }
                 HapticManager.deleteWarning()
-                // Navigation back would be handled by the view
+                NotificationCenter.default.post(name: .documentDeleted, object: document.id)
+                isDeleted = true
             } catch {
                 self.error = error
+                HapticManager.error()
+            }
+        }
+    }
+
+    func sharePDF() {
+        preparePDF { [weak self] file in self?.sharedFile = SharedFile(url: file) }
+    }
+
+    func openPDF() {
+        preparePDF { [weak self] file in self?.viewedFile = SharedFile(url: file) }
+    }
+
+    private func preparePDF(then present: @escaping (URL) -> Void) {
+        guard !isPreparingPDF else { return }
+        if AuthService.shared.currentUser?.email == "demo@commonplace.app" {
+            error = PDFShareError.demoMode
+            return
+        }
+        isPreparingPDF = true
+        Task {
+            defer { isPreparingPDF = false }
+            do {
+                let file = try await documentService.pdfFile(for: document)
+                present(file)
+            } catch {
+                self.error = PDFShareError.failed
                 HapticManager.error()
             }
         }
@@ -91,6 +226,18 @@ class DocumentDetailViewModel: ObservableObject {
                 self.error = error
                 HapticManager.error()
             }
+        }
+    }
+}
+
+enum PDFShareError: LocalizedError {
+    case demoMode
+    case failed
+
+    var errorDescription: String? {
+        switch self {
+        case .demoMode: return "Sign in to share items as PDF."
+        case .failed: return "Couldn't create the PDF. Please try again."
         }
     }
 }

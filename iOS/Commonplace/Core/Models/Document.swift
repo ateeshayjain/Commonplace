@@ -19,7 +19,7 @@ struct Document: Identifiable, Codable, Hashable {
     let authorAvatarUrl: String?
 
     // Content
-    let title: String
+    var title: String
     let subtitle: String?
     let bodyPlain: String
     let wordCount: Int?
@@ -38,6 +38,7 @@ struct Document: Identifiable, Codable, Hashable {
     let threadId: UUID?
 
     // AI Enrichment
+    var aiHook: String?
     let aiSummaryShort: String?
     let aiSummaryLong: String?
     let aiKeyPoints: [String]?
@@ -46,10 +47,13 @@ struct Document: Identifiable, Codable, Hashable {
     let aiComplexityScore: Int?
     let aiReadingLevel: ReadingLevel?
     let aiContentType: ContentType?
-    let aiQuotableLines: [String]?
+    var aiQuotableLines: [String]?
+
+    // Source-specific metadata (YouTube channel/chapters, OCR pages)
+    var metadata: DocumentMetadata?
 
     // Output
-    let pdfUrl: String?
+    var pdfUrl: String?
     let pdfVersion: Int?
     let thumbnailUrl: String?
     let screenshotUrl: String?
@@ -97,6 +101,7 @@ struct Document: Identifiable, Codable, Hashable {
         case threadPosition = "thread_position"
         case threadTotal = "thread_total"
         case threadId = "thread_id"
+        case aiHook = "ai_hook"
         case aiSummaryShort = "ai_summary_short"
         case aiSummaryLong = "ai_summary_long"
         case aiKeyPoints = "ai_key_points"
@@ -106,6 +111,7 @@ struct Document: Identifiable, Codable, Hashable {
         case aiReadingLevel = "ai_reading_level"
         case aiContentType = "ai_content_type"
         case aiQuotableLines = "ai_quotable_lines"
+        case metadata
         case pdfUrl = "pdf_url"
         case pdfVersion = "pdf_version"
         case thumbnailUrl = "thumbnail_url"
@@ -143,6 +149,7 @@ enum SourceType: String, Codable, CaseIterable, Hashable {
     case email
     case screenshot
     case manual
+    case bookOcr = "book_ocr"
     case unknown
 
     var displayName: String {
@@ -163,6 +170,7 @@ enum SourceType: String, Codable, CaseIterable, Hashable {
         case .email: return "Email"
         case .screenshot: return "Screenshot"
         case .manual: return "Manual"
+        case .bookOcr: return "Book Scan"
         case .unknown: return "Unknown"
         }
     }
@@ -185,8 +193,32 @@ enum SourceType: String, Codable, CaseIterable, Hashable {
         case .email: return "✉️"
         case .screenshot: return "📸"
         case .manual: return "✍️"
+        case .bookOcr: return "📖"
         case .unknown: return "📄"
         }
+    }
+}
+
+// One flat shape for every source; unused fields stay nil
+struct DocumentMetadata: Codable, Hashable {
+    // YouTube
+    var channelName: String?
+    var viewCount: Int?
+    var uploadDate: String?
+    var thumbnailUrl: String?
+    var chapters: [Chapter]?
+
+    // Book OCR
+    var pageCount: Int?
+    var bookTitle: String?
+    var pageNumbers: [Int]?
+
+    // Articles: section headings in bodyPlain, in order
+    var headings: [String]?
+
+    struct Chapter: Codable, Hashable {
+        let startSec: Int
+        let title: String
     }
 }
 

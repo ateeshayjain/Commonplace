@@ -5,6 +5,12 @@ struct AuthView: View {
     @EnvironmentObject var authService: AuthService
     @State private var showingEmailAuth = false
     @State private var showOnboarding = true
+    @State private var showingPrivacyPolicy = false
+
+    /// Apple's standard licence, which covers apps that don't ship their own terms
+    private static let termsURL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
+    /// Handled in-app: opens the privacy policy sheet instead of a browser
+    private static let privacyURL = "sangrah-app://privacy"
 
     var body: some View {
         if showOnboarding {
@@ -24,10 +30,10 @@ struct AuthView: View {
                     .font(.system(size: 60, weight: .light))
                     .foregroundColor(.cpTint)
 
-                Text("Commonplace")
+                Text("Sangrah")
                     .font(.cpLargeTitle)
 
-                Text("Your personal knowledge library")
+                Text("संग्रह · your personal knowledge library")
                     .font(.cpBody)
                     .foregroundColor(.cpTextSecondary)
             }
@@ -41,10 +47,12 @@ struct AuthView: View {
                     request.requestedScopes = [.email, .fullName]
                 } onCompletion: { result in
                     switch result {
-                    case .success:
-                        authService.signInWithApple()
+                    case .success(let authorization):
+                        authService.handleAppleAuthorization(authorization)
                     case .failure(let error):
-                        print("Apple Sign In failed: \(error)")
+                        // The user dismissing the sheet is not an error worth an alert.
+                        if (error as? ASAuthorizationError)?.code == .canceled { return }
+                        authService.error = error
                     }
                 }
                 .signInWithAppleButtonStyle(.black)
@@ -97,12 +105,28 @@ struct AuthView: View {
             Spacer()
 
             // Terms
-            Text("By continuing, you agree to our Terms of Service and Privacy Policy")
+            Text(.init("By continuing, you agree to Apple's [Terms of Use](\(Self.termsURL)) and our [Privacy Policy](\(Self.privacyURL))"))
                 .font(.cpCaption1)
                 .foregroundColor(.cpTextTertiary)
+                .tint(.cpTint)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, CPSpacing.xl)
                 .padding(.bottom, CPSpacing.lg)
+                .environment(\.openURL, OpenURLAction { url in
+                    guard url.absoluteString == Self.privacyURL else { return .systemAction }
+                    showingPrivacyPolicy = true
+                    return .handled
+                })
+        }
+        .sheet(isPresented: $showingPrivacyPolicy) {
+            NavigationStack {
+                PrivacyPolicyView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingPrivacyPolicy = false }
+                        }
+                    }
+            }
         }
         .sheet(isPresented: $showingEmailAuth) {
             EmailAuthSheet()

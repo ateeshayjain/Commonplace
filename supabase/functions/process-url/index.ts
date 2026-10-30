@@ -3,7 +3,15 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.17.1";
+import { Anthropic, CLAUDE_MODELS, generateJSON, type ImageInput } from '../_shared/claude.ts';
+import { attachTags, fetchRecentTagNames } from '../_shared/tags.ts';
+import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT, fitHook } from '../_shared/generation.ts';
+import { cleanArticleMarkdown, scribdPagesToText } from '../_shared/markdown.ts';
+import { QUOTE_MAX_CHARS, QUOTE_MAX_COUNT, verbatimQuotes } from '../_shared/quotes.ts';
+import { SCREENSHOT_BUCKET, screenshotPaths } from '../_shared/screenshots.ts';
+
+// Supabase Edge Runtime: keeps background work alive after the response is sent
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,8 +19,10 @@ const corsHeaders = {
 };
 
 interface ProcessURLRequest {
-  url: string;
+  url?: string;
   categories?: string[];
+  // Storage paths of screenshots shared from Photos, in order; sent instead of url
+  screenshots?: string[];
 }
 
 interface ExtractedContent {
@@ -30,6 +40,10 @@ interface ExtractedContent {
   };
   isThread?: boolean;
   threadParts?: string[];
+  // Source-specific extras stored in documents.metadata (shape: DocumentMetadata in iOS)
+  metadata?: Record<string, unknown>;
+  // Images whose text is part of the content (Instagram carousel slides); read by Claude vision
+  images?: string[];
 }
 
 serve(async (req) => {
@@ -59,7 +73,11 @@ serve(async (req) => {
     }
 
     // Parse request
-    const { url, categories = [] }: ProcessURLRequest = await req.json();
+    const { url, categories = [], screenshots }: ProcessURLRequest = await req.json();
+
+    if (screenshots !== undefined) {
+      return await saveScreenshots(supabase, user.id, screenshots, categories);
+    }
 
     if (!url) {
       throw new Error('URL is required');
@@ -67,6 +85,23 @@ serve(async (req) => {
 
     // Detect platform
     const platform = detectPlatform(url);
+
+    // The same link shared twice is one item, not two
+    const canonical = canonicalUrl(url);
+    const { data: existing } = await supabase
+      .from('documents')
+      .select('id, processing_status')
+      .eq('user_id', user.id)
+      .in('source_url', [url, canonical])
+      .neq('processing_status', 'failed')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (existing && existing.length > 0) {
+      return new Response(
+        JSON.stringify({ id: existing[0].id, status: existing[0].processing_status, message: 'Already saved' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      );
+    }
 
     // Create initial document record
     const { data: document, error: insertError } = await supabase
@@ -88,8 +123,11 @@ serve(async (req) => {
       throw insertError;
     }
 
-    // Process asynchronously
-    processContent(supabase, document.id, url, platform);
+    // Process asynchronously; without waitUntil the runtime may kill this after responding
+    const processing = processContent(supabase, user.id, document.id, url, platform, categories.length === 0);
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(processing);
+    }
 
     return new Response(
       JSON.stringify({
@@ -106,7 +144,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
@@ -118,9 +156,11 @@ serve(async (req) => {
 // Process content asynchronously
 async function processContent(
   supabase: any,
+  userId: string,
   documentId: string,
   url: string,
-  platform: string
+  platform: string,
+  autoCategorise: boolean
 ) {
   try {
     // Update status
@@ -144,30 +184,31 @@ async function processContent(
         original_published_at: content.publishedAt,
         engagement: content.engagement,
         is_thread: content.isThread || false,
+        metadata: content.metadata ?? {},
         processing_status: 'enriching',
         word_count: content.bodyPlain.split(/\s+/).length,
         reading_time_minutes: Math.ceil(content.bodyPlain.split(/\s+/).length / 200),
       })
       .eq('id', documentId);
 
-    // Generate AI enrichment
-    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain);
+    // Generate AI enrichment, reusing the user's existing tags where they fit
+    const existingTags = await fetchRecentTagNames(supabase, userId);
+    const slideImages = await downloadImages(content.images ?? []);
+    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags, slideImages);
+    // Slide text read from the images becomes part of the saved body
+    if (aiEnrichment.transcribedText) {
+      const combined = `${content.bodyPlain}\n\n${aiEnrichment.transcribedText}`.trim();
+      await supabase
+        .from('documents')
+        .update({
+          body_plain: combined,
+          word_count: combined.split(/\s+/).length,
+          reading_time_minutes: Math.ceil(combined.split(/\s+/).length / 200),
+        })
+        .eq('id', documentId);
+    }
 
-    // Update with AI enrichment
-    await supabase
-      .from('documents')
-      .update({
-        ai_summary_short: aiEnrichment.summaryShort,
-        ai_summary_long: aiEnrichment.summaryLong,
-        ai_key_points: aiEnrichment.keyPoints,
-        ai_categories: aiEnrichment.categories,
-        ai_topics: aiEnrichment.topics,
-        ai_complexity_score: aiEnrichment.complexityScore,
-        ai_reading_level: aiEnrichment.readingLevel,
-        processing_status: 'completed',
-        processed_at: new Date().toISOString(),
-      })
-      .eq('id', documentId);
+    await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
 
   } catch (error) {
     console.error('Processing error:', error);
@@ -175,35 +216,270 @@ async function processContent(
       .from('documents')
       .update({
         processing_status: 'failed',
-        processing_error: error.message,
+        processing_error: (error as Error).message,
       })
       .eq('id', documentId);
   }
 }
 
-// Platform detection
-function detectPlatform(url: string): string {
-  const patterns: Record<string, RegExp[]> = {
-    twitter: [/twitter\.com/, /x\.com/],
-    linkedin: [/linkedin\.com\/(posts|pulse|feed|in)\//],
-    youtube: [/youtube\.com/, /youtu\.be/],
-    instagram: [/instagram\.com\/(p|reel|tv)\//],
-    threads: [/threads\.net/],
-    reddit: [/reddit\.com/],
-    hackernews: [/news\.ycombinator\.com/],
-    substack: [/\.substack\.com/],
-    medium: [/medium\.com/],
-  };
+// Update with AI enrichment (PRD: hook / executiveSummary / keyTakeaways)
+async function saveEnrichment(
+  supabase: any,
+  userId: string,
+  documentId: string,
+  aiEnrichment: Enrichment,
+  autoCategorise: boolean
+) {
+  await supabase
+    .from('documents')
+    .update({
+      ai_hook: aiEnrichment.hook,
+      ai_summary_short: aiEnrichment.summaryShort,
+      ai_summary_long: aiEnrichment.executiveSummary,
+      ai_key_points: aiEnrichment.keyTakeaways,
+      ai_quotable_lines: aiEnrichment.quotableLines,
+      ai_categories: aiEnrichment.categories,
+      ai_topics: aiEnrichment.tags, // kept for the current UI until tags are shown
+      ai_complexity_score: aiEnrichment.complexityScore,
+      ai_reading_level: aiEnrichment.readingLevel,
+      // The Library filters, rows and detail read user_categories; when the
+      // save did not name any, the AI's picks become the starting point
+      // (the user can still edit them).
+      ...(autoCategorise ? { user_categories: aiEnrichment.categories } : {}),
+      processing_status: 'completed',
+      processed_at: new Date().toISOString(),
+    })
+    .eq('id', documentId);
 
-  for (const [platform, regexes] of Object.entries(patterns)) {
-    for (const regex of regexes) {
-      if (regex.test(url)) {
-        return platform;
-      }
-    }
+  await attachTags(supabase, userId, documentId, aiEnrichment.tags);
+}
+
+// MARK: Screenshots
+
+// A save made of screenshots (e.g. five screenshots of one article): the
+// images are read together, in order, into one article
+async function saveScreenshots(supabase: any, userId: string, input: unknown, categories: string[]): Promise<Response> {
+  const paths = screenshotPaths(input, userId);
+  if (!paths) {
+    throw new Error('Invalid screenshots');
   }
 
+  const { data: document, error: insertError } = await supabase
+    .from('documents')
+    .insert({
+      user_id: userId,
+      source_type: 'screenshot',
+      title: 'Reading screenshots...',
+      body_plain: '',
+      processing_status: 'fetching',
+      user_categories: categories,
+      metadata: { screenshotPaths: paths, imageCount: paths.length },
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    throw insertError;
+  }
+
+  const processing = processScreenshots(supabase, userId, document.id, paths, categories.length === 0);
+  if (typeof EdgeRuntime !== 'undefined') {
+    EdgeRuntime.waitUntil(processing);
+  }
+
+  return new Response(
+    JSON.stringify({ id: document.id, status: 'processing', message: 'Screenshots queued for processing' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+  );
+}
+
+async function processScreenshots(
+  supabase: any,
+  userId: string,
+  documentId: string,
+  paths: string[],
+  autoCategorise: boolean
+) {
+  try {
+    await supabase
+      .from('documents')
+      .update({ processing_status: 'extracting' })
+      .eq('id', documentId);
+
+    const images = await downloadScreenshots(supabase, paths);
+    if (images.length === 0) {
+      throw new Error('The screenshots could not be read');
+    }
+
+    const existingTags = await fetchRecentTagNames(supabase, userId);
+    const aiEnrichment = await generateAIEnrichment('', '', existingTags, images, 'screenshots');
+    const body = aiEnrichment.transcribedText ?? '';
+    if (!body) {
+      throw new Error('No text was found in the screenshots');
+    }
+
+    const words = body.split(/\s+/).length;
+    await supabase
+      .from('documents')
+      .update({
+        title: aiEnrichment.title || 'Saved screenshots',
+        author_name: aiEnrichment.authorName || null,
+        source_domain: aiEnrichment.sourceName || null,
+        body_plain: body,
+        word_count: words,
+        reading_time_minutes: Math.ceil(words / 200),
+        processing_status: 'enriching',
+      })
+      .eq('id', documentId);
+
+    await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
+  } catch (error) {
+    console.error('Screenshot processing error:', error);
+    await supabase
+      .from('documents')
+      .update({
+        title: 'Saved screenshots',
+        processing_status: 'failed',
+        processing_error: (error as Error).message,
+      })
+      .eq('id', documentId);
+  }
+}
+
+// Paths were checked by screenshotPaths: the caller's folder only
+async function downloadScreenshots(supabase: any, paths: string[]): Promise<ImageInput[]> {
+  const images: ImageInput[] = [];
+  for (const path of paths) {
+    const { data, error } = await supabase.storage.from(SCREENSHOT_BUCKET).download(path);
+    if (error || !data) {
+      console.log(`Screenshot download failed (${path}):`, error);
+      continue;
+    }
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    images.push({ mediaType: 'image/jpeg', data: btoa(binary) });
+  }
+  console.log(`Downloaded ${images.length}/${paths.length} screenshots`);
+  return images;
+}
+
+// Anthropic fetches image URLs itself and honours robots.txt, which Instagram's
+// CDN uses to refuse it. Download the slides here instead and pass the bytes.
+// Only Instagram/Facebook CDN hosts over https, no redirects, a timeout, and a
+// streamed byte cap: the URLs come from a third-party page, so treat them as untrusted.
+const IMAGE_HOSTS = [/(^|\.)cdninstagram\.com$/i, /(^|\.)fbcdn\.net$/i];
+
+function isAllowedImageUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'https:' && !parsed.port && IMAGE_HOSTS.some((re) => re.test(parsed.hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function readCapped(response: Response, maxBytes: number): Promise<Uint8Array | null> {
+  const declared = Number(response.headers.get('content-length') ?? '0');
+  if (declared > maxBytes) return null;
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function downloadImages(urls: string[], maxBytesEach = 4_000_000, maxTotal = 20_000_000): Promise<ImageInput[]> {
+  const images: ImageInput[] = [];
+  let total = 0;
+  for (const url of urls) {
+    if (!isAllowedImageUrl(url)) continue;
+    try {
+      const response = await fetch(url, {
+        headers: { 'Accept': 'image/*' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
+      });
+      const mediaType = (response.headers.get('content-type') ?? '').split(';')[0].trim();
+      if (response.status !== 200 || !/^image\/(jpeg|png|gif|webp)$/.test(mediaType)) {
+        await response.body?.cancel();
+        continue;
+      }
+      const bytes = await readCapped(response, Math.min(maxBytesEach, maxTotal - total));
+      if (!bytes || bytes.byteLength === 0) continue;
+      total += bytes.byteLength;
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      images.push({ mediaType, data: btoa(binary) });
+      if (total >= maxTotal) break;
+    } catch (e) {
+      console.log('Image download failed:', e);
+    }
+  }
+  if (urls.length) console.log(`Downloaded ${images.length}/${urls.length} images (${total} bytes)`);
+  return images;
+}
+
+// Platform detection
+// Match on the parsed hostname (and path where it matters), never a substring of
+// the whole URL: a crafted link like https://evil.example/instagram.com/p/x/ must
+// not reach a platform extractor.
+function detectPlatform(url: string): string {
+  let host = '';
+  let path = '';
+  try {
+    const parsed = new URL(url);
+    host = parsed.hostname.toLowerCase().replace(/^(www\.|m\.|mobile\.)/, '');
+    path = parsed.pathname;
+  } catch {
+    return 'article';
+  }
+  const is = (domain: string) => host === domain || host.endsWith(`.${domain}`);
+
+  if (is('twitter.com') || is('x.com')) return 'twitter';
+  if (is('linkedin.com') && /^\/(posts|pulse|feed|in)\//.test(path)) return 'linkedin';
+  if (is('youtube.com') || host === 'youtu.be') return 'youtube';
+  if (is('instagram.com') && /^\/([^/]+\/)?(p|reel|tv)\//.test(path)) return 'instagram';
+  if (is('threads.net') || is('threads.com')) return 'threads';
+  if (is('reddit.com')) return 'reddit';
+  if (host === 'news.ycombinator.com') return 'hackernews';
+  if (is('substack.com')) return 'substack';
+  if (is('medium.com')) return 'medium';
   return 'article';
+}
+
+// Drop tracking parameters so x.com/...?s=12 and ...?s=46 are the same save
+function canonicalUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    for (const key of [...parsed.searchParams.keys()]) {
+      if (/^(s|t|si|igsh|igshid|psln|cplk|xtok|obrf|utm_[a-z]+|fbclid|ref_src)$/i.test(key)) parsed.searchParams.delete(key);
+    }
+    parsed.hash = '';
+    return parsed.toString().replace(/\?$/, '');
+  } catch {
+    return url;
+  }
 }
 
 function extractDomain(url: string): string {
@@ -214,12 +490,291 @@ function extractDomain(url: string): string {
   }
 }
 
+// fxtwitter mirrors X's public post data. It expands t.co links and carries
+// the body of X Articles under tweet.article.content.blocks, which neither
+// the syndication endpoint (preview only) nor a page fetch (login wall) does.
+async function extractTweetViaFxTwitter(tweetId: string): Promise<ExtractedContent | null> {
+  try {
+    const response = await fetch(`https://api.fxtwitter.com/i/status/${tweetId}`, {
+      headers: { 'User-Agent': 'CommonplaceBot/1.0' },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const tweet = data?.tweet;
+    if (!tweet) return null;
+
+    const author = tweet.author ?? {};
+    const base = {
+      authorName: author.name as string | undefined,
+      authorHandle: author.screen_name ? `@${author.screen_name}` : undefined,
+      publishedAt: tweet.created_at as string | undefined,
+      engagement: {
+        likes: tweet.likes as number | undefined,
+        shares: tweet.retweets as number | undefined,
+        comments: tweet.replies as number | undefined,
+        views: tweet.views as number | undefined,
+      },
+    };
+
+    const blocks = tweet.article?.content?.blocks as Array<{ text?: string }> | undefined;
+    if (blocks && blocks.length > 0) {
+      const paragraphs = blocks
+        .map((block) => (block.text ?? '').trim())
+        .filter((text) => text.length > 0);
+      const title = ((tweet.article?.title as string | undefined) ?? '').trim();
+      return {
+        ...base,
+        title: title || paragraphs[0]?.substring(0, 100) || 'X Article',
+        bodyPlain: paragraphs.join('\n\n'),
+      };
+    }
+
+    let text = ((tweet.text as string | undefined) ?? '').trim();
+    const quote = tweet.quote;
+    if (quote?.text) {
+      const quotedBy = quote.author?.screen_name ? `@${quote.author.screen_name}` : 'the quoted post';
+      text = `${text}\n\nQuoting ${quotedBy}:\n${String(quote.text).trim()}`.trim();
+    }
+    if (!text) return null;
+    const firstLine = text.split('\n')[0];
+    return {
+      ...base,
+      title: firstLine.substring(0, 100) + (firstLine.length > 100 ? '...' : ''),
+      bodyPlain: text,
+    };
+  } catch (e) {
+    console.log('fxtwitter failed:', e);
+    return null;
+  }
+}
+
+function extractYouTubeVideoId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'youtu.be') return parsed.pathname.slice(1).split('/')[0] || null;
+    const v = parsed.searchParams.get('v');
+    if (v) return v;
+    const shorts = parsed.pathname.match(/\/(?:shorts|embed|live)\/([A-Za-z0-9_-]{6,})/);
+    return shorts ? shorts[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+// YouTube: the watch page is a shell for a reader, so Jina returns navigation
+// chrome. Read the public oEmbed endpoint (title, channel, thumbnail) and the
+// player JSON embedded in the page (description, keywords, length, views,
+// publish date, chapters). The description is what gets summarized.
+async function extractYouTube(url: string): Promise<ExtractedContent | null> {
+  const videoId = extractYouTubeVideoId(url);
+  if (!videoId) return null;
+  const canonical = `https://www.youtube.com/watch?v=${videoId}`;
+
+  let title = '';
+  let channelName: string | undefined;
+  let thumbnailUrl: string | undefined;
+  try {
+    const oembed = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonical)}&format=json`);
+    if (oembed.ok) {
+      const data = await oembed.json();
+      title = (data.title as string | undefined) ?? '';
+      channelName = data.author_name as string | undefined;
+      thumbnailUrl = data.thumbnail_url as string | undefined;
+    }
+  } catch (e) {
+    console.log('YouTube oEmbed failed:', e);
+  }
+
+  let description = '';
+  let keywords: string[] = [];
+  const metadata: Record<string, unknown> = {};
+  try {
+    const page = await fetch(canonical, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+        'Accept-Language': 'en',
+      },
+    });
+    const html = await page.text();
+    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.*?\})\s*;\s*(?:var |<\/script>)/s);
+    if (match) {
+      const player = JSON.parse(match[1]);
+      const details = player.videoDetails ?? {};
+      title = title || (details.title as string | undefined) || '';
+      channelName = channelName ?? (details.author as string | undefined);
+      description = ((details.shortDescription as string | undefined) ?? '').trim();
+      keywords = (details.keywords as string[] | undefined) ?? [];
+      if (details.lengthSeconds) metadata.durationSec = Number(details.lengthSeconds);
+      if (details.viewCount) metadata.viewCount = Number(details.viewCount);
+      const publishDate = player.microformat?.playerMicroformatRenderer?.publishDate as string | undefined;
+      if (publishDate) metadata.uploadDate = publishDate;
+    }
+    const chapters: { startSec: number; title: string }[] = [];
+    const chapterPattern = /"macroMarkersListItemRenderer":\{"title":\{"simpleText":"([^"]+)"\},"timeDescription":\{"simpleText":"([^"]+)"\}/g;
+    for (const m of html.matchAll(chapterPattern)) {
+      const parts = m[2].split(':').map(Number);
+      const startSec = parts.reduce((acc, part) => acc * 60 + part, 0);
+      if (!chapters.some((c) => c.startSec === startSec)) chapters.push({ startSec, title: m[1] });
+    }
+    if (chapters.length) metadata.chapters = chapters;
+  } catch (e) {
+    console.log('YouTube page fetch failed:', e);
+  }
+
+  if (!title) return null;
+  if (channelName) metadata.channelName = channelName;
+  if (thumbnailUrl) metadata.thumbnailUrl = thumbnailUrl;
+
+  const bodyParts = [description];
+  if (keywords.length) bodyParts.push(`Keywords: ${keywords.join(', ')}`);
+  const bodyPlain = bodyParts.filter((part) => part.length > 0).join('\n\n') || title;
+
+  return {
+    title,
+    bodyPlain,
+    authorName: channelName,
+    publishedAt: metadata.uploadDate as string | undefined,
+    engagement: metadata.viewCount ? { views: metadata.viewCount as number } : undefined,
+    metadata,
+  };
+}
+
+// Instagram. Primary source: the post's public embed page (the one sites use to
+// embed a post), which carries the caption, the account and every carousel
+// slide's image URL. Jina is a fallback; Instagram started refusing it (403) on
+// 28 Oct 2026. Slides are read later by Claude (ExtractedContent.images).
+function instagramShortcode(url: string): string | null {
+  try {
+    const match = new URL(url).pathname.match(/^\/(?:[^/]+\/)?(?:p|reel|tv)\/([A-Za-z0-9_-]{5,})/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)));
+}
+
+async function extractInstagramEmbed(shortcode: string): Promise<ExtractedContent | null> {
+  try {
+    const response = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.status !== 200) return null;
+    const html = await response.text();
+
+    const block = html.match(/class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments"/)
+      ?? html.match(/class="Caption"[^>]*>([\s\S]*?)<\/div>/);
+    let caption = '';
+    let username: string | undefined;
+    if (block) {
+      username = block[1].match(/class="CaptionUsername"[^>]*>([^<]+)</)?.[1]?.trim();
+      caption = decodeHtmlEntities(
+        block[1]
+          .replace(/<br\s*\/?>/g, '\n')
+          .replace(/<a class="CaptionUsername"[\s\S]*?<\/a>/, '')
+          .replace(/<[^>]+>/g, '')
+      ).replace(/[ \t]+/g, ' ').trim();
+    }
+    username = username ?? html.match(/class="UsernameText"[^>]*>([^<]+)</)?.[1]?.trim();
+
+    // The post JSON sits in a script as an escaped string; undo that escaping once
+    const unescaped = html
+      .replace(/\\\\\//g, '/').replace(/\\\//g, '/')
+      .replace(/\\u0025/g, '%').replace(/\\u0026/g, '&').replace(/\\"/g, '"');
+    const sidecar = unescaped.indexOf('"edge_sidecar_to_children"');
+    const region = sidecar >= 0 ? unescaped.slice(sidecar) : unescaped;
+    const images: string[] = [];
+    for (const match of region.matchAll(/"display_url":"(https:[^"]+)"/g)) {
+      if (!images.includes(match[1])) images.push(match[1]);
+      if (images.length >= 10) break;
+    }
+
+    if (!caption && images.length === 0) return null;
+    const firstLine = caption.split('\n')[0] || `Instagram post${username ? ` by @${username}` : ''}`;
+    return {
+      title: firstLine.substring(0, 120),
+      bodyPlain: caption,
+      authorName: username,
+      authorHandle: username ? `@${username}` : undefined,
+      images,
+      metadata: images.length ? { imageCount: images.length } : {},
+    };
+  } catch (e) {
+    console.log('Instagram embed failed:', e);
+    return null;
+  }
+}
+
+async function extractInstagramViaJina(url: string): Promise<ExtractedContent | null> {
+  try {
+    const response = await fetch(`https://r.jina.ai/${url}`, {
+      headers: { 'Accept': 'application/json', 'X-Return-Format': 'markdown' },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) return null;
+    const envelope = await response.json();
+    const page = envelope?.data && typeof envelope.data === 'object' ? envelope.data : envelope;
+    const rawTitle: string = page.title ?? '';
+    const markdown: string = page.content ?? '';
+
+    // "Name on Instagram: "caption text"". Anything else is the login wall, not the post.
+    const titleMatch = rawTitle.match(/^(.*?) on Instagram: ["\u201c](.*)["\u201d]\s*$/s);
+    if (!titleMatch) return null;
+    const authorName = titleMatch[1].trim();
+    const caption = titleMatch[2].trim();
+
+    const images: string[] = [];
+    const seenFiles = new Set<string>();
+    for (const match of markdown.matchAll(/!\[[^\]]*\]\((https:\/\/[^)\s]*cdninstagram\.com[^)\s]*)\)/g)) {
+      const src = match[1];
+      if (/profile picture|s150x150|s320x320/.test(match[0])) continue;
+      let file = src;
+      try { file = new URL(src).pathname.split('/').pop() ?? src; } catch { /* keep src */ }
+      if (seenFiles.has(file)) continue;
+      seenFiles.add(file);
+      images.push(src);
+      if (images.length >= 10) break;
+    }
+
+    const firstLine = caption.split('\n')[0] || `Instagram post by ${authorName}`;
+    return {
+      title: firstLine.substring(0, 120),
+      bodyPlain: caption,
+      authorName,
+      images,
+      metadata: images.length ? { imageCount: images.length } : {},
+    };
+  } catch (e) {
+    console.log('Instagram via Jina failed:', e);
+    return null;
+  }
+}
+
+async function extractInstagram(url: string): Promise<ExtractedContent | null> {
+  const shortcode = instagramShortcode(url);
+  if (shortcode) {
+    const embedded = await extractInstagramEmbed(shortcode);
+    if (embedded) return embedded;
+  }
+  return await extractInstagramViaJina(url);
+}
+
 // Content extraction - Uses Jina Reader API for high-quality extraction
 async function extractContent(url: string, platform: string): Promise<ExtractedContent> {
-  // For Twitter, try syndication endpoint first
+  // For X / Twitter: fxtwitter first (expanded links, long posts, and X
+  // Articles, whose tweet text is only a t.co link), then the syndication
+  // endpoint as a fallback.
   if (platform === 'twitter') {
     const tweetId = extractTweetId(url);
     if (tweetId) {
+      const viaFx = await extractTweetViaFxTwitter(tweetId);
+      if (viaFx) return viaFx;
       try {
         const response = await fetch(
           `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&token=0`
@@ -246,6 +801,18 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
     }
   }
 
+  if (platform === 'youtube') {
+    const video = await extractYouTube(url);
+    if (video) return video;
+  }
+
+  if (platform === 'instagram') {
+    const post = await extractInstagram(url);
+    if (post) return post;
+    // The generic path would only reach Instagram's login wall and summarise that
+    throw new Error("Couldn't read this Instagram post. It may be private or deleted.");
+  }
+
   // Try Jina Reader API first (free tier: 1M tokens/month)
   try {
     console.log('Trying Jina Reader API...');
@@ -257,15 +824,29 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
     });
 
     if (jinaResponse.ok) {
-      const data = await jinaResponse.json();
-      console.log('Jina extraction successful');
-      return {
-        title: data.title || 'Untitled',
-        subtitle: data.description,
-        bodyPlain: data.content || data.text || '',
-        authorName: data.author,
-        publishedAt: data.publishedTime,
-      };
+      const envelope = await jinaResponse.json();
+      // With Accept: application/json, Jina wraps the page in { code, status, data: {...} }.
+      // Reading the fields off the envelope produced "Untitled" with an empty body.
+      const page = envelope?.data && typeof envelope.data === 'object' ? envelope.data : envelope;
+      const raw: string = page.content || page.text || '';
+      // Scribd's only text is in its page images' alt text; keep it before images are stripped
+      const markdown = isScribd(url) ? scribdPagesToText(raw) : raw;
+      // Jina returns Markdown; body_plain is shown and printed as plain text
+      const article = cleanArticleMarkdown(markdown, page.title);
+      if (article.text.trim().length > 0) {
+        console.log('Jina extraction successful');
+        return {
+          title: page.title || 'Untitled',
+          subtitle: page.description,
+          bodyPlain: article.text,
+          // Jina puts the page's <meta name="author"> under metadata; the byline
+          // names every co-author, so it wins when the page has one
+          authorName: article.byline ?? page.metadata?.author ?? page.author,
+          publishedAt: page.publishedTime,
+          metadata: article.headings.length ? { headings: article.headings } : undefined,
+        };
+      }
+      console.log('Jina returned no body text, falling back to HTML parsing');
     }
   } catch (e) {
     console.log('Jina extraction failed, falling back to HTML parsing:', e);
@@ -279,6 +860,10 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
       },
     });
     const html = await response.text();
+    // A bot wall (Cloudflare on Medium) is not the article; never summarise it
+    if (!response.ok || /<title>(Attention Required!|Just a moment)/i.test(html)) {
+      throw new BlockedPageError(`This site didn't let us read the page (HTTP ${response.status}). Try again later.`);
+    }
 
     // Extract basic metadata from HTML
     const title = extractFromHTML(html, /<title>([^<]+)<\/title>/i) ||
@@ -304,14 +889,26 @@ async function extractContent(url: string, platform: string): Promise<ExtractedC
       title: title.substring(0, 200),
       subtitle: description?.substring(0, 300),
       bodyPlain: bodyText || description || 'Content could not be extracted',
-      authorName,
+      authorName: authorName ?? undefined,
     };
   } catch (e) {
+    if (e instanceof BlockedPageError) throw e;
     console.error('Extraction failed:', e);
     return {
       title: 'Could not extract content',
       bodyPlain: `Failed to extract content from ${url}`,
     };
+  }
+}
+
+class BlockedPageError extends Error {}
+
+function isScribd(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'scribd.com' || host.endsWith('.scribd.com');
+  } catch {
+    return false;
   }
 }
 
@@ -326,74 +923,154 @@ function extractFromHTML(html: string, pattern: RegExp): string | null {
 }
 
 // AI Enrichment
-async function generateAIEnrichment(title: string, content: string) {
+interface Enrichment {
+  hook: string;              // <= HOOK_MAX_CHARS, single sentence
+  summaryShort: string;      // 2-3 sentences
+  executiveSummary: string;  // markdown bullet list
+  keyTakeaways: string[];    // exactly KEY_TAKEAWAY_COUNT
+  quotableLines: string[];   // verbatim from the content, for share cards; may be empty
+  tags: string[];            // 3-6, deduplicated downstream by slug
+  categories: string[];
+  complexityScore: number;   // 1-10
+  readingLevel: 'casual' | 'intermediate' | 'advanced' | 'expert';
+  transcribedText?: string;  // text read from supplied images, empty when none
+  // Screenshot saves only: what the screenshots show of the piece itself
+  title?: string;
+  authorName?: string;
+  sourceName?: string;
+}
+
+const CATEGORIES = ['Technology', 'Business', 'Health', 'Science', 'Culture', 'Politics', 'Design', 'Personal Dev'];
+
+// Structured-output schema: types/enums/required only; lengths and counts are enforced below
+const ENRICHMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['hook', 'summaryShort', 'executiveSummary', 'keyTakeaways', 'quotableLines', 'tags', 'categories', 'complexityScore', 'readingLevel', 'transcribedText'],
+  properties: {
+    transcribedText: { type: 'string' },
+    hook: { type: 'string' },
+    summaryShort: { type: 'string' },
+    executiveSummary: { type: 'string' },
+    keyTakeaways: { type: 'array', items: { type: 'string' } },
+    quotableLines: { type: 'array', items: { type: 'string' } },
+    tags: { type: 'array', items: { type: 'string' } },
+    categories: { type: 'array', items: { type: 'string', enum: CATEGORIES } },
+    complexityScore: { type: 'integer' },
+    readingLevel: { type: 'string', enum: ['casual', 'intermediate', 'advanced', 'expert'] },
+  },
+};
+
+// Screenshots carry no page metadata, so Claude also reads the headline, author and source
+const SCREENSHOT_SCHEMA = {
+  ...ENRICHMENT_SCHEMA,
+  required: [...ENRICHMENT_SCHEMA.required, 'title', 'authorName', 'sourceName'],
+  properties: {
+    ...ENRICHMENT_SCHEMA.properties,
+    title: { type: 'string' },
+    authorName: { type: 'string' },
+    sourceName: { type: 'string' },
+  },
+};
+
+function fallbackEnrichment(content: string): Enrichment {
+  return {
+    hook: fitHook(content),
+    summaryShort: content.substring(0, 200) + '...',
+    executiveSummary: content.substring(0, 500),
+    keyTakeaways: [],
+    quotableLines: [],
+    tags: [],
+    categories: [],
+    complexityScore: 5,
+    readingLevel: 'intermediate',
+    transcribedText: '',
+  };
+}
+
+const STATUS_TAGS = /^(missing content|needs review|shortened url|twitter link|no content|untitled)$/i;
+
+// Images are either a post's slides (Instagram) next to its caption, or
+// screenshots that are the whole content
+type ImageKind = 'slides' | 'screenshots';
+
+function imageInstructions(images: ImageInput[], kind: ImageKind): string {
+  if (!images.length) return 'transcribedText: return an empty string.';
+  if (kind === 'slides') {
+    return `The ${images.length} image(s) above are the post's slides; their text IS the content. Transcribe them faithfully, in order, into transcribedText (plain text, slide breaks as blank lines) and base everything below on caption plus slides.`;
+  }
+  return `The ${images.length} image(s) above are screenshots of ONE piece (an article, thread or post), in the order they were taken; their text IS the content.
+- transcribedText: the piece's main text, transcribed faithfully and in order as plain text, paragraphs separated by blank lines. Keep the author's wording, spelling and capitalisation. Leave out phone and app chrome: status bar, menus, buttons, like/view/reply counts, ads, and comments under the piece. Screenshots usually overlap: text that appears at the bottom of one and the top of the next is written once.
+- title: the piece's headline as shown; if it has none, a short descriptive title (under 80 characters).
+- authorName: the author's name as shown; an empty string if none is visible.
+- sourceName: the publication, site or app as shown (e.g. "Substack", "The Atlantic", "LinkedIn"); an empty string if none is visible.
+Base everything below on the transcribed text.`;
+}
+
+async function generateAIEnrichment(
+  title: string,
+  content: string,
+  existingTags: string[],
+  images: ImageInput[] = [],
+  kind: ImageKind = 'slides'
+): Promise<Enrichment> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
     console.log('Anthropic API key not configured, skipping AI enrichment');
-    return {
-      summaryShort: content.substring(0, 200) + '...',
-      summaryLong: content.substring(0, 500),
-      keyPoints: [],
-      categories: [],
-      topics: [],
-      complexityScore: 5,
-      readingLevel: 'intermediate',
-    };
+    return fallbackEnrichment(content);
   }
 
   try {
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: `Analyze this content and provide:
-
-1. SHORT SUMMARY (2-3 sentences, focus on main insight)
-2. LONG SUMMARY (2-3 paragraphs)
-3. KEY POINTS (3-5 bullet points)
-4. CATEGORIES (choose from: Technology, Business, Health, Science, Culture, Politics, Design, Personal Dev)
-5. TOPICS (3-5 specific topics)
-6. COMPLEXITY SCORE (1-10, where 1=casual, 10=expert)
-7. READING LEVEL (casual, intermediate, advanced, expert)
-
+    const fromScreenshots = kind === 'screenshots' && images.length > 0;
+    const result = await generateJSON<Enrichment>(anthropic, {
+      model: CLAUDE_MODELS.saves,
+      effort: 'low',
+      schema: fromScreenshots ? SCREENSHOT_SCHEMA : ENRICHMENT_SCHEMA,
+      images,
+      // A long article's transcription comes on top of the summary fields
+      maxTokens: fromScreenshots ? 20000 : undefined,
+      prompt: `Analyze this content for a personal knowledge library.
+${imageInstructions(images, kind)}
+${fromScreenshots ? '' : `
 Title: ${title}
 Content: ${content.substring(0, 10000)}
+`}
+Produce:
+- hook: ONE sentence, max ${HOOK_MAX_CHARS} characters (about 25 words), the single most striking idea. No preamble.
+- summaryShort: 2-3 sentences on the main insight.
+- executiveSummary: a markdown bullet list (5-8 bullets) of the arguments, key figures and practical implications.
+- keyTakeaways: exactly ${KEY_TAKEAWAY_COUNT} actionable takeaways, each one sentence.
+- quotableLines: 2-${QUOTE_MAX_COUNT} of the most striking lines, each copied WORD FOR WORD from the content (they are shared as quotes credited to the author, so never paraphrase, shorten or merge sentences). Each under ${QUOTE_MAX_CHARS} characters. Return an empty list if the content has no such lines.
+- tags: 3-6 short topical tags (1-3 words each, Title Case, no # symbol). Specific over generic: "Transformer Models" not "AI". Tags describe the subject only; never add status labels such as "Missing Content" or "Needs Review". If the content is thin, summarize what is there without commenting on what is missing.
+${existingTags.length ? `  Reuse these existing tags when they fit, spelled exactly as given: ${existingTags.join(', ')}` : ''}
+- categories: 1-2 from: ${CATEGORIES.join(', ')}.
+- complexityScore: 1 (casual) to 10 (expert).
+- readingLevel: casual, intermediate, advanced or expert.
 
-Respond in JSON format:
-{
-  "summaryShort": "...",
-  "summaryLong": "...",
-  "keyPoints": ["...", "..."],
-  "categories": ["..."],
-  "topics": ["..."],
-  "complexityScore": 5,
-  "readingLevel": "intermediate"
-}`,
-      }],
+Write in the language of the content.`,
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
+    return {
+      hook: fitHook(result.hook),
+      summaryShort: result.summaryShort.trim(),
+      executiveSummary: result.executiveSummary.trim(),
+      keyTakeaways: result.keyTakeaways.slice(0, KEY_TAKEAWAY_COUNT),
+      // Slide text counts as content: Instagram quotes often live in the slides
+      quotableLines: verbatimQuotes(result.quotableLines ?? [], `${content}\n${result.transcribedText ?? ''}`),
+      tags: result.tags.filter((tag) => !STATUS_TAGS.test(tag.trim())),
+      categories: result.categories.filter((c) => CATEGORIES.includes(c)),
+      complexityScore: Math.min(10, Math.max(1, Math.round(result.complexityScore))),
+      readingLevel: result.readingLevel,
+      transcribedText: (result.transcribedText ?? '').trim(),
+      title: result.title?.trim().substring(0, 200),
+      authorName: result.authorName?.trim().substring(0, 120),
+      sourceName: result.sourceName?.trim().substring(0, 120),
+    };
   } catch (e) {
     console.error('AI enrichment failed:', e);
+    return fallbackEnrichment(content);
   }
-
-  // Fallback
-  return {
-    summaryShort: content.substring(0, 200) + '...',
-    summaryLong: content.substring(0, 500),
-    keyPoints: [],
-    categories: [],
-    topics: [],
-    complexityScore: 5,
-    readingLevel: 'intermediate',
-  };
 }

@@ -2,9 +2,11 @@ import SwiftUI
 
 struct LibraryView: View {
     @StateObject private var viewModel = LibraryViewModel()
+    @ObservedObject private var categoryService = CategoryService.shared
     @State private var selectedCategory: String? = nil
     @State private var searchText = ""
     @State private var showingAddURL = false
+    @State private var showingHowToSave = false
     @State private var urlToAdd = ""
     @State private var isAddingURL = false
 
@@ -12,6 +14,7 @@ struct LibraryView: View {
     @State private var isSelectMode = false
     @State private var selectedDocuments: Set<UUID> = []
     @State private var showingCompose = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -27,14 +30,24 @@ struct LibraryView: View {
 
                     // Category filter
                     CategoryFilterView(
-                        categories: viewModel.categories,
+                        categories: categoryService.categories,
                         selected: $selectedCategory
                     )
-                    .padding(.bottom, CPSpacing.md)
+                    .padding(.bottom, viewModel.availableSources.count > 1 ? CPSpacing.xs : CPSpacing.md)
                     .onChange(of: selectedCategory) { _, newValue in
                         Task {
                             await viewModel.loadDocuments(category: newValue)
                         }
+                    }
+
+                    // Source filter (hidden until there is more than one source)
+                    if viewModel.availableSources.count > 1 {
+                        sourceFilterRow
+                            .padding(.bottom, CPSpacing.md)
+                    }
+
+                    if viewModel.pendingSaveCount > 0 {
+                        processingBanner
                     }
 
                     // Content
@@ -47,9 +60,27 @@ struct LibraryView: View {
                     }
                 }
             }
+            // Declared here, outside the lazy stacks: a navigationDestination
+            // inside a LazyVStack is only registered once that row renders, so
+            // taps silently did nothing.
+            .navigationDestination(for: Document.self) { document in
+                DocumentDetailView(document: document)
+            }
             .navigationTitle("Library")
             .refreshable {
-                await viewModel.refresh()
+                await viewModel.refresh(category: selectedCategory)
+            }
+            // Saves made from the Share Extension land while the app is in the
+            // background; reload when it comes back so they show without a pull.
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                Task {
+                    await viewModel.refresh(category: selectedCategory)
+                    // A share made seconds before switching back may still be
+                    // summarizing; look once more after it has had time to finish.
+                    try? await Task.sleep(for: .seconds(15))
+                    await viewModel.refresh(category: selectedCategory)
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -139,6 +170,12 @@ struct LibraryView: View {
                     }
                 )
             }
+            .sheet(isPresented: $showingHowToSave) {
+                HowToSaveSheet {
+                    showingHowToSave = false
+                    showingAddURL = true
+                }
+            }
             .sheet(isPresented: $showingCompose) {
                 ComposeView(
                     documents: viewModel.documents.filter { selectedDocuments.contains($0.id) },
@@ -151,6 +188,26 @@ struct LibraryView: View {
         }
         .task {
             await viewModel.loadDocuments()
+        }
+        .task {
+            await categoryService.load()
+        }
+    }
+
+    private var sourceFilterRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: CPSpacing.xs) {
+                ForEach(viewModel.availableSources, id: \.self) { source in
+                    CPTagChip(
+                        name: source == .twitter ? "X" : source.displayName,
+                        isSelected: viewModel.selectedSource == source,
+                        prefix: source == .twitter ? "" : source.icon
+                    ) {
+                        viewModel.selectedSource = viewModel.selectedSource == source ? nil : source
+                    }
+                }
+            }
+            .padding(.horizontal, CPSpacing.screenHorizontal)
         }
     }
 
@@ -215,9 +272,6 @@ struct LibraryView: View {
                     sectionHeader(group.title)
                 }
             }
-        }
-        .navigationDestination(for: Document.self) { document in
-            DocumentDetailView(document: document)
         }
     }
 
@@ -286,6 +340,20 @@ struct LibraryView: View {
         .padding(.horizontal, CPSpacing.screenHorizontal)
     }
 
+    private var processingBanner: some View {
+        HStack(spacing: CPSpacing.sm) {
+            ProgressView()
+            Text(viewModel.pendingSaveCount == 1
+                 ? "Summarizing 1 link…"
+                 : "Summarizing \(viewModel.pendingSaveCount) links…")
+                .font(.cpFootnote)
+                .foregroundColor(.cpTextSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, CPSpacing.screenHorizontal)
+        .padding(.bottom, CPSpacing.sm)
+    }
+
     private var emptyView: some View {
         CPEmptyState(
             icon: "books.vertical",
@@ -295,7 +363,7 @@ struct LibraryView: View {
                 : "Try a different search term",
             actionTitle: searchText.isEmpty ? "Learn How to Save" : nil
         ) {
-            // Show tutorial
+            showingHowToSave = true
         }
     }
 
@@ -390,6 +458,81 @@ struct AddURLSheet: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - How To Save Sheet
+
+/// Explains the ways to get content into the library. `onAddLink` dismisses
+/// this sheet and opens the Add URL sheet.
+struct HowToSaveSheet: View {
+    let onAddLink: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Step {
+        let icon: String
+        let title: String
+        let detail: String
+    }
+
+    private let steps = [
+        Step(
+            icon: "plus.circle.fill",
+            title: "Paste a link",
+            detail: "Tap + in the Library, paste the URL of an article, thread, or post, and tap Add. Sangrah fetches it and writes the summary."
+        ),
+        Step(
+            icon: "square.and.arrow.up",
+            title: "Share from any app",
+            detail: "From Safari, X, LinkedIn, or YouTube, tap Share and pick Sangrah. It saves in one tap and closes."
+        ),
+        Step(
+            icon: "sparkles",
+            title: "Read the summary",
+            detail: "Each save gets a one-line hook, key points, and tags, so you can find it again by what it was about."
+        )
+    ]
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: CPSpacing.lg) {
+                ForEach(steps.indices, id: \.self) { index in
+                    HStack(alignment: .top, spacing: CPSpacing.md) {
+                        Image(systemName: steps[index].icon)
+                            .font(.title2)
+                            .foregroundColor(.cpTint)
+                            .frame(width: 32)
+                        VStack(alignment: .leading, spacing: CPSpacing.xs) {
+                            Text(steps[index].title)
+                                .font(.cpHeadline)
+                            Text(steps[index].detail)
+                                .font(.cpBody)
+                                .foregroundColor(.cpTextSecondary)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                Button(action: onAddLink) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add a Link Now")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .padding(CPSpacing.screenHorizontal)
+            .navigationTitle("How to Save")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
                 }
             }
         }

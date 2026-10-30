@@ -3,7 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.17.1";
+import { Anthropic, CLAUDE_MODELS, generateJSON } from '../_shared/claude.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,6 +26,25 @@ interface VoiceAnalysis {
   emojiUsage: string;
   postingPatterns: string;
 }
+
+type VoiceAnalysisResult = Omit<VoiceAnalysis, 'averageLength'>;
+
+const VOICE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['tone', 'vocabularyLevel', 'postStructure', 'hashtagUsage', 'engagementStyle', 'topTopics', 'samplePhrases', 'emojiUsage', 'postingPatterns'],
+  properties: {
+    tone: { type: 'string', enum: ['professional', 'casual', 'humorous', 'inspirational', 'authoritative', 'conversational'] },
+    vocabularyLevel: { type: 'integer' },
+    postStructure: { type: 'string', enum: ['short', 'medium', 'long', 'mixed', 'thread-style'] },
+    hashtagUsage: { type: 'string', enum: ['none', 'minimal', 'moderate', 'heavy'] },
+    engagementStyle: { type: 'string', enum: ['informative', 'provocative', 'questioning', 'storytelling', 'educational'] },
+    topTopics: { type: 'array', items: { type: 'string' } },
+    samplePhrases: { type: 'array', items: { type: 'string' } },
+    emojiUsage: { type: 'string', enum: ['none', 'minimal', 'moderate', 'heavy'] },
+    postingPatterns: { type: 'string' },
+  },
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -120,7 +139,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
@@ -226,53 +245,30 @@ async function analyzePostStyle(
     .join('\n\n---\n\n');
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: `Analyze these ${platform} posts and create a voice profile. Look for patterns in writing style, tone, and engagement.
+    const parsed = await generateJSON<VoiceAnalysisResult>(anthropic, {
+      model: CLAUDE_MODELS.standard,
+      effort: 'medium',
+      schema: VOICE_SCHEMA,
+      prompt: `Analyze these ${platform} posts and create a voice profile. Look for patterns in writing style, tone, and engagement.
 
 POSTS:
 ${postsText}
 
-Analyze and respond with this exact JSON structure:
-{
-  "tone": "<dominant tone: professional/casual/humorous/inspirational/authoritative/conversational>",
-  "vocabularyLevel": <1-10, where 1=very simple, 10=highly technical>,
-  "postStructure": "<short/medium/long/mixed/thread-style>",
-  "hashtagUsage": "<none/minimal/moderate/heavy>",
-  "engagementStyle": "<informative/provocative/questioning/storytelling/educational>",
-  "topTopics": ["topic1", "topic2", "topic3", "topic4", "topic5"],
-  "samplePhrases": ["phrase they often use 1", "phrase 2", "phrase 3"],
-  "emojiUsage": "<none/minimal/moderate/heavy>",
-  "postingPatterns": "<brief description of patterns, e.g., 'opens with questions, uses numbered lists'>"
-}
-
-Only respond with valid JSON.`,
-      }],
+Report:
+- tone: the dominant tone
+- vocabularyLevel: 1 (very simple) to 10 (highly technical)
+- postStructure, hashtagUsage, engagementStyle, emojiUsage: pick the closest option
+- topTopics: the 5 topics they write about most
+- samplePhrases: 3 phrases they actually use, quoted from the posts
+- postingPatterns: one sentence, e.g. "opens with questions, uses numbered lists"`,
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) {
-      throw new Error('No JSON in response');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
-
     return {
-      tone: parsed.tone || 'professional',
-      vocabularyLevel: parsed.vocabularyLevel || 5,
-      postStructure: parsed.postStructure || 'medium',
-      hashtagUsage: parsed.hashtagUsage || 'moderate',
-      engagementStyle: parsed.engagementStyle || 'informative',
-      topTopics: parsed.topTopics || [],
-      samplePhrases: parsed.samplePhrases || [],
+      ...parsed,
+      vocabularyLevel: Math.min(10, Math.max(1, Math.round(parsed.vocabularyLevel))),
+      topTopics: parsed.topTopics.slice(0, 5),
+      samplePhrases: parsed.samplePhrases.slice(0, 3),
       averageLength: Math.round(posts.reduce((sum, p) => sum + p.text.length, 0) / posts.length),
-      emojiUsage: parsed.emojiUsage || 'minimal',
-      postingPatterns: parsed.postingPatterns || '',
     };
 
   } catch (e) {

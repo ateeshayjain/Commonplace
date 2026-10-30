@@ -3,12 +3,22 @@
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { PDFDocument, StandardFonts, rgb, PageSizes } from "https://esm.sh/pdf-lib@1.17.1";
+import {
+  PDFDocument, StandardFonts, rgb, PageSizes,
+  pushGraphicsState, popGraphicsState, moveTo, lineTo, appendBezierCurve, closePath, clip, endPath,
+} from "https://esm.sh/pdf-lib@1.17.1";
+import { bodyToBlocks } from '../_shared/markdown.ts';
+import { BRAND_NAME, BRAND_NAVY, brandIconBytes } from '../_shared/brand.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Bump when the layout changes; the app regenerates stored PDFs older than its
+// DocumentService.pdfLayoutVersion. 2: Sangrah header and per-page footer;
+// 3: the post's own date next to the save date
+const PDF_LAYOUT_VERSION = 3;
 
 interface GeneratePDFRequest {
   documentId: string;
@@ -84,7 +94,7 @@ serve(async (req) => {
     // Update document with PDF URL
     await supabase
       .from('documents')
-      .update({ pdf_url: urlData.publicUrl })
+      .update({ pdf_url: urlData.publicUrl, pdf_version: PDF_LAYOUT_VERSION })
       .eq('id', documentId);
 
     return new Response(
@@ -101,7 +111,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
@@ -111,7 +121,8 @@ serve(async (req) => {
 });
 
 // PDF Generation
-async function generateArticlePDF(document: any): Promise<Uint8Array> {
+async function generateArticlePDF(input: any): Promise<Uint8Array> {
+  let document = input;
   const pdfDoc = await PDFDocument.create();
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -128,6 +139,48 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
   let page = pdfDoc.addPage(PageSizes.Letter);
   let yPosition = pageHeight - margin;
 
+  // The standard fonts only encode Windows-1252 (WinAnsi); pdf-lib throws on
+  // anything else (emoji, arrows, Devanagari, a bare newline). Map common
+  // look-alikes and drop the rest, testing each character with the real encoder.
+  const REPLACEMENTS: Record<string, string> = {
+    '\u2192': '->', '\u2190': '<-', '\u2194': '<->', '\u21d2': '=>',
+    '\u2212': '-', '\u2010': '-', '\u2011': '-', '\u2012': '-', '\u2015': '-',
+    '\u2032': "'", '\u2033': '"', '\u2009': ' ', '\u200a': ' ', '\u202f': ' ',
+    '\u2002': ' ', '\u2003': ' ', '\u2007': ' ', '\u2008': ' ', '\t': ' ',
+    '\u2264': '<=', '\u2265': '>=', '\u2260': '!=', '\u2713': 'v', '\u2714': 'v',
+    '\u25cf': '•', '\u25aa': '•', '\u25b6': '>', '\u2605': '*', '\u2606': '*',
+  };
+  const encodable = new Map<string, boolean>();
+  function safe(text: string | null | undefined): string {
+    if (!text) return '';
+    let out = '';
+    for (const ch of text.normalize('NFC')) {
+      if (ch === '\n') { out += '\n'; continue; }
+      const mapped = REPLACEMENTS[ch] ?? ch;
+      for (const part of mapped) {
+        let ok = encodable.get(part);
+        if (ok === undefined) {
+          try { helvetica.widthOfTextAtSize(part, 10); helveticaBold.widthOfTextAtSize(part, 10); ok = true; } catch { ok = false; }
+          encodable.set(part, ok);
+        }
+        if (ok) out += part;
+      }
+    }
+    return out.replace(/[ ]{2,}/g, ' ');
+  }
+  document = {
+    ...document,
+    title: safe(document.title) || 'Untitled',
+    author_name: safe(document.author_name),
+    author_handle: safe(document.author_handle),
+    source_domain: safe(document.source_domain),
+    // Footer link without share-tracking parameters (?s=12, ?xtok=..., ?si=...)
+    source_url: safe((document.source_url ?? '').split('?')[0]),
+    ai_summary_short: safe(document.ai_summary_short),
+    ai_key_points: (document.ai_key_points ?? []).map((p: string) => safe(p)).filter((p: string) => p.trim()),
+    body_plain: safe(document.body_plain),
+  };
+
   // Helper: Add new page if needed
   function ensureSpace(height: number): void {
     if (yPosition - height < margin) {
@@ -138,26 +191,23 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
 
   // Helper: Wrap text into lines
   function wrapText(text: string, font: any, size: number, maxWidth: number): string[] {
-    const words = text.split(' ');
     const lines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const width = font.widthOfTextAtSize(testLine, size);
-
-      if (width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
+    for (const rawLine of text.split('\n')) {
+      const words = rawLine.split(' ').filter((w) => w.length > 0);
+      let currentLine = '';
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        if (font.widthOfTextAtSize(testLine, size) > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
       }
-    }
-
-    if (currentLine) {
       lines.push(currentLine);
     }
-
+    // keep blank lines inside a paragraph, but not trailing ones
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
     return lines;
   }
 
@@ -166,13 +216,14 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
     text: string,
     font: any,
     size: number,
-    color = rgb(0.1, 0.1, 0.1)
+    color = rgb(0.1, 0.1, 0.1),
+    indent = 0
   ): void {
-    const lines = wrapText(text, font, size, contentWidth);
+    const lines = wrapText(text, font, size, contentWidth - indent);
     for (const line of lines) {
       ensureSpace(lineHeight);
       page.drawText(line, {
-        x: margin,
+        x: margin + indent,
         y: yPosition,
         font,
         size,
@@ -182,9 +233,33 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
     }
   }
 
-  // === HEADER: Source & Date ===
-  const sourceText = `${getSourceIcon(document.source_type)} ${document.source_domain || document.source_type}`;
-  const dateText = formatDate(document.created_at);
+  // === HEADER: Sangrah mark, then source & date ===
+  const brandIcon = await pdfDoc.embedPng(brandIconBytes());
+  const iconSize = 22;
+  drawRoundedImage(page, brandIcon, margin, yPosition - iconSize + 8, iconSize, 5);
+  page.drawText(BRAND_NAME, {
+    x: margin + iconSize + 8,
+    y: yPosition - 7,
+    font: helveticaBold,
+    size: 14,
+    color: rgb(BRAND_NAVY.r, BRAND_NAVY.g, BRAND_NAVY.b),
+  });
+
+  yPosition -= iconSize + 6;
+  page.drawLine({
+    start: { x: margin, y: yPosition },
+    end: { x: pageWidth - margin, y: yPosition },
+    thickness: 0.5,
+    color: rgb(0.85, 0.85, 0.85),
+  });
+  yPosition -= 18;
+
+  const sourceText = `${getSourceLabel(document.source_type)} · ${document.source_domain || document.source_type}`;
+  // When the piece was posted, if the source says, as well as when it was saved
+  const savedText = `Saved ${formatDate(document.created_at)}`;
+  const dateText = document.original_published_at
+    ? `Posted ${formatDate(document.original_published_at)} · ${savedText}`
+    : savedText;
 
   page.drawText(sourceText, {
     x: margin,
@@ -255,7 +330,7 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
 
     // Draw summary box background
     const summaryLines = wrapText(document.ai_summary_short, helvetica, bodySize, contentWidth - 20);
-    const boxHeight = (summaryLines.length * lineHeight) + 40;
+    const boxHeight = (summaryLines.length * lineHeight) + 52;
 
     page.drawRectangle({
       x: margin,
@@ -270,7 +345,7 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
     yPosition -= 10;
 
     // Summary header
-    page.drawText('✨ AI Summary', {
+    page.drawText('AI Summary', {
       x: margin + 10,
       y: yPosition,
       font: helveticaBold,
@@ -292,7 +367,7 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
       yPosition -= lineHeight;
     }
 
-    yPosition -= 20;
+    yPosition -= 32;
   }
 
   // === KEY POINTS ===
@@ -339,55 +414,117 @@ async function generateArticlePDF(document: any): Promise<Uint8Array> {
 
   // === CONTENT ===
   if (document.body_plain) {
-    // Split into paragraphs
-    const paragraphs = document.body_plain.split(/\n\n+/);
+    // Older article saves hold Jina's raw Markdown; newer ones are plain text
+    // with their section headings listed in metadata.headings
+    const headings = (document.metadata?.headings ?? []).map((h: string) => safe(h));
+    const blocks = bodyToBlocks(document.body_plain, document.title, headings);
 
-    for (const paragraph of paragraphs) {
-      const cleanPara = paragraph.trim();
-      if (!cleanPara) continue;
+    for (const block of blocks) {
+      const text = block.text.trim();
+      if (!text) continue;
 
-      drawWrappedText(cleanPara, helvetica, bodySize);
-      yPosition -= 10; // Paragraph spacing
+      switch (block.kind) {
+        case 'heading':
+          ensureSpace(lineHeight * 3); // keep a heading with the text under it
+          yPosition -= 6;
+          drawWrappedText(text, helveticaBold, 13);
+          yPosition -= 4;
+          break;
+        case 'quote':
+          drawWrappedText(text, helvetica, bodySize, rgb(0.35, 0.35, 0.35), 16);
+          yPosition -= 10;
+          break;
+        default:
+          drawWrappedText(text, helvetica, bodySize);
+          yPosition -= 10; // Paragraph spacing
+      }
     }
   }
 
-  // === FOOTER (on last page) ===
-  yPosition = margin - 20;
-  const footerText = `Saved with Commonplace • ${document.source_url || ''}`;
-  const footerWidth = helvetica.widthOfTextAtSize(footerText, 8);
+  // === FOOTER (every page): Sangrah mark and source left, page number right ===
+  const pages = pdfDoc.getPages();
+  const pageLabelWidth = helvetica.widthOfTextAtSize(`${pages.length} / ${pages.length}`, 8);
+  const footerTextX = margin + 14;
+  const footerMaxWidth = pageWidth - margin - pageLabelWidth - 16 - footerTextX;
+  let footerText = `Saved with ${BRAND_NAME}${document.source_url ? ` • ${safe(document.source_url)}` : ''}`;
+  while (footerText.length > 20 && helvetica.widthOfTextAtSize(footerText, 8) > footerMaxWidth) {
+    footerText = footerText.slice(0, -2) + '…';
+    footerText = footerText.replace(/……$/, '…');
+  }
 
-  page.drawText(footerText, {
-    x: (pageWidth - footerWidth) / 2,
-    y: 30,
-    font: helvetica,
-    size: 8,
-    color: rgb(0.6, 0.6, 0.6),
+  pages.forEach((p, index) => {
+    drawRoundedImage(p, brandIcon, margin, 28, 10, 2.5);
+    p.drawText(footerText, {
+      x: footerTextX,
+      y: 30,
+      font: helvetica,
+      size: 8,
+      color: rgb(0.6, 0.6, 0.6),
+    });
+    const pageLabel = `${index + 1} / ${pages.length}`;
+    p.drawText(pageLabel, {
+      x: pageWidth - margin - helvetica.widthOfTextAtSize(pageLabel, 8),
+      y: 30,
+      font: helvetica,
+      size: 8,
+      color: rgb(0.6, 0.6, 0.6),
+    });
   });
 
   return await pdfDoc.save();
 }
 
-function getSourceIcon(sourceType: string): string {
-  const icons: Record<string, string> = {
-    twitter: '𝕏',
-    linkedin: 'in',
-    youtube: '▶',
-    article: '📄',
-    substack: '📧',
-    medium: 'M',
-    reddit: '🔴',
-    hackernews: 'Y',
-    instagram: '📷',
-    threads: '🧵',
-    podcast: '🎙',
-    pdf: '📑',
+// The icon with rounded corners, like it appears on the home screen: clip to a
+// rounded square, draw, restore. (x, y) is the bottom-left corner.
+// deno-lint-ignore no-explicit-any
+function drawRoundedImage(page: any, image: any, x: number, y: number, size: number, radius: number): void {
+  const k = 0.5523 * radius; // Bezier handle length for a quarter circle
+  const right = x + size;
+  const top = y + size;
+  page.pushOperators(
+    pushGraphicsState(),
+    moveTo(x + radius, y),
+    lineTo(right - radius, y),
+    appendBezierCurve(right - radius + k, y, right, y + radius - k, right, y + radius),
+    lineTo(right, top - radius),
+    appendBezierCurve(right, top - radius + k, right - radius + k, top, right - radius, top),
+    lineTo(x + radius, top),
+    appendBezierCurve(x + radius - k, top, x, top - radius + k, x, top - radius),
+    lineTo(x, y + radius),
+    appendBezierCurve(x, y + radius - k, x + radius - k, y, x + radius, y),
+    closePath(),
+    clip(),
+    endPath(),
+  );
+  page.drawImage(image, { x, y, width: size, height: size });
+  page.pushOperators(popGraphicsState());
+}
+
+// Plain-text labels: the standard PDF fonts cannot draw emoji
+function getSourceLabel(sourceType: string): string {
+  const labels: Record<string, string> = {
+    twitter: 'X',
+    linkedin: 'LinkedIn',
+    youtube: 'YouTube',
+    article: 'Article',
+    substack: 'Substack',
+    medium: 'Medium',
+    reddit: 'Reddit',
+    hackernews: 'Hacker News',
+    instagram: 'Instagram',
+    threads: 'Threads',
+    podcast: 'Podcast',
+    pdf: 'PDF',
+    screenshot: 'Screenshots',
+    book_ocr: 'Book',
   };
-  return icons[sourceType] || '📄';
+  return labels[sourceType] || 'Saved';
 }
 
 function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',

@@ -8,8 +8,7 @@ struct DocumentRow: View {
             // Author row
             HStack(spacing: CPSpacing.xs) {
                 // Source icon
-                Text(document.sourceType.icon)
-                    .font(.system(size: 14))
+                SourceIcon(type: document.sourceType, size: 14)
 
                 Text(document.authorName ?? document.sourceDomain ?? "Unknown")
                     .font(.cpHeadline)
@@ -112,8 +111,7 @@ struct DocumentRowCompact: View {
                     .fill(document.sourceType.color.opacity(0.1))
                     .frame(width: 40, height: 40)
 
-                Text(document.sourceType.icon)
-                    .font(.system(size: 16))
+                SourceIcon(type: document.sourceType, size: 18)
             }
 
             VStack(alignment: .leading, spacing: 2) {

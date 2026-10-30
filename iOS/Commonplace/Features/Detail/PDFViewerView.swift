@@ -9,6 +9,8 @@ struct PDFViewerView: View {
     @State private var isLoading = true
     @State private var error: Error?
     @State private var pdfDocument: PDFDocument?
+    @State private var showingShareSheet = false
+    @State private var showingSaveToFiles = false
 
     var body: some View {
         NavigationStack {
@@ -52,20 +54,32 @@ struct PDFViewerView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button {
-                            sharePDF()
+                            showingShareSheet = true
                         } label: {
                             Label("Share", systemImage: "square.and.arrow.up")
                         }
 
                         Button {
-                            // Download for offline
+                            showingSaveToFiles = true
                         } label: {
-                            Label("Save for Offline", systemImage: "arrow.down.circle")
+                            Label("Save to Files", systemImage: "folder")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
+                    .disabled(pdfDocument == nil)
                 }
+            }
+            // Presented from this screen: the viewer is itself a full-screen cover,
+            // and the app's root controller can't present while it is showing
+            .sheet(isPresented: $showingShareSheet) {
+                ActivityView(items: [url])
+                    .presentationDetents([.medium, .large])
+                    .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showingSaveToFiles) {
+                SaveToFilesView(url: url)
+                    .ignoresSafeArea()
             }
         }
         .task {
@@ -90,23 +104,6 @@ struct PDFViewerView: View {
 
         isLoading = false
     }
-
-    private func sharePDF() {
-        guard let pdfDocument = pdfDocument,
-              let data = pdfDocument.dataRepresentation() else {
-            return
-        }
-
-        let activityVC = UIActivityViewController(
-            activityItems: [data],
-            applicationActivities: nil
-        )
-
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            rootVC.present(activityVC, animated: true)
-        }
-    }
 }
 
 // MARK: - PDFKit View
@@ -127,6 +124,19 @@ struct PDFKitView: UIViewRepresentable {
     func updateUIView(_ uiView: PDFView, context: Context) {
         uiView.document = document
     }
+}
+
+// MARK: - Save to Files
+
+/// The system "Save to Files" picker for a local file; saves a copy wherever the user chooses
+struct SaveToFilesView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
 }
 
 // MARK: - PDF Error

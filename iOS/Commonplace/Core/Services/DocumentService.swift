@@ -1,5 +1,12 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted with the deleted document's UUID as `object` so open lists can drop it.
+    static let documentDeleted = Notification.Name("documentDeleted")
+    /// Posted with the edited `Document` as `object` so open lists show the change.
+    static let documentUpdated = Notification.Name("documentUpdated")
+}
+
 class DocumentService {
     static let shared = DocumentService()
 
@@ -11,6 +18,7 @@ class DocumentService {
 
     func fetchDocuments(
         category: String? = nil,
+        tagId: UUID? = nil,
         limit: Int = 50,
         offset: Int = 0
     ) async throws -> [Document] {
@@ -22,8 +30,17 @@ class DocumentService {
             filters["user_categories"] = "cs.[\"\(category)\"]"
         }
 
+        // Inner-join on document_tags so only documents carrying the tag come back.
+        // The embedded `document_tags` key is ignored by Document's CodingKeys.
+        var select = "*"
+        if let tagId = tagId {
+            select = "*,document_tags!inner(tag_id)"
+            filters["document_tags.tag_id"] = "eq.\(tagId.uuidString)"
+        }
+
         return try await supabase.fetch(
             from: "documents",
+            select: select,
             filters: filters,
             order: "created_at.desc",
             limit: limit
@@ -48,38 +65,6 @@ class DocumentService {
             ],
             order: "created_at.desc",
             limit: limit
-        )
-    }
-
-    // MARK: - Search
-
-    struct SearchResult: Codable, Identifiable, Hashable {
-        let id: UUID
-        let title: String
-        let aiSummaryShort: String?
-        let sourceType: SourceType
-        let authorName: String?
-        let createdAt: Date
-        let rank: Double
-
-        enum CodingKeys: String, CodingKey {
-            case id
-            case title
-            case aiSummaryShort = "ai_summary_short"
-            case sourceType = "source_type"
-            case authorName = "author_name"
-            case createdAt = "created_at"
-            case rank
-        }
-    }
-
-    func searchDocuments(query: String, limit: Int = 20) async throws -> [SearchResult] {
-        return try await supabase.rpc(
-            function: "search_documents",
-            params: [
-                "p_query": query,
-                "p_limit": limit
-            ]
         )
     }
 
@@ -138,6 +123,24 @@ class DocumentService {
         )
     }
 
+    /// Renames a save. The stored PDF prints the old title, so it's cleared and
+    /// made again the next time it's opened.
+    func updateTitle(_ id: UUID, title: String) async throws {
+        try await supabase.update(
+            table: "documents",
+            id: id,
+            values: ["title": title, "pdf_url": NSNull()]
+        )
+    }
+
+    func updateQuotableLines(_ id: UUID, lines: [String]) async throws {
+        try await supabase.update(
+            table: "documents",
+            id: id,
+            values: ["ai_quotable_lines": lines]
+        )
+    }
+
     func archiveDocument(_ id: UUID, isArchived: Bool) async throws {
         try await supabase.update(
             table: "documents",
@@ -147,6 +150,52 @@ class DocumentService {
     }
 
     // MARK: - Delete Document
+
+    // MARK: - PDF
+
+    /// A local PDF of the document, ready for the share sheet. Reuses the stored
+    /// PDF when there is one and regenerates it (generate-pdf) when there is not
+    /// or the stored copy can't be downloaded.
+    /// Matches PDF_LAYOUT_VERSION in generate-pdf: a stored PDF from an older
+    /// layout (before the Sangrah header, say) is made again instead of reused
+    static let pdfLayoutVersion = 3
+
+    func pdfFile(for document: Document) async throws -> URL {
+        if let stored = document.pdfUrl, stored.hasPrefix("https://"), let url = URL(string: stored),
+           (document.pdfVersion ?? 1) >= Self.pdfLayoutVersion,
+           let file = try? await download(pdf: url, title: document.title) {
+            return file
+        }
+        struct PDFResponse: Decodable { let pdfUrl: String }
+        let response: PDFResponse = try await supabase.invokeFunction(
+            name: "generate-pdf",
+            body: ["documentId": document.id.uuidString]
+        )
+        guard let url = URL(string: response.pdfUrl) else { throw SupabaseError.invalidResponse }
+        return try await download(pdf: url, title: document.title)
+    }
+
+    private func download(pdf url: URL, title: String) async throws -> URL {
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              data.starts(with: Array("%PDF".utf8)) else {
+            throw SupabaseError.invalidResponse
+        }
+        // A readable file name for the share sheet and the recipient
+        let unsafe = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines).union(.controlCharacters)
+        var name = title.components(separatedBy: unsafe).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if name.count > 80 { name = String(name.prefix(80)).trimmingCharacters(in: .whitespaces) }
+        if name.isEmpty { name = "Sangrah" }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("pdf-share", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("\(name).pdf")
+        try? FileManager.default.removeItem(at: file)
+        try data.write(to: file, options: .atomic)
+        return file
+    }
 
     func deleteDocument(_ id: UUID) async throws {
         try await supabase.delete(from: "documents", id: id)
@@ -161,40 +210,41 @@ class DocumentService {
         )
     }
 
-    // MARK: - Stats
+    // MARK: - Tags
 
-    struct LibraryStats: Codable {
-        let totalDocuments: Int
-        let totalReadTime: Int
-        let documentsThisWeek: Int
-        let topCategories: [String]
+    /// Row shape for `document_tags?select=tag:tags(...)`
+    private struct DocumentTagRow: Decodable {
+        let tag: Tag?   // null if RLS hides the joined tag row
     }
 
-    func fetchStats() async throws -> LibraryStats {
-        // For now, return computed stats
-        let documents: [Document] = try await supabase.fetch(
-            from: "documents",
-            filters: ["processing_status": "eq.completed"]
+    /// Tags attached to one document, ordered by name
+    func fetchTags(for documentId: UUID) async throws -> [Tag] {
+        let rows: [DocumentTagRow] = try await supabase.fetch(
+            from: "document_tags",
+            select: "tag:tags(id,user_id,name,slug,created_at)",
+            filters: ["document_id": "eq.\(documentId.uuidString)"]
         )
+        return rows
+            .compactMap { $0.tag }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
 
-        let totalReadTime = documents.compactMap { $0.readingTimeMinutes }.reduce(0, +)
+    /// All of the signed-in user's tags (RLS scopes the table), ordered by name
+    func fetchAllTags() async throws -> [Tag] {
+        return try await supabase.fetch(
+            from: "tags",
+            order: "name.asc"
+        )
+    }
 
-        let oneWeekAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        let documentsThisWeek = documents.filter { $0.createdAt > oneWeekAgo }.count
+    // MARK: - Stats
 
-        let categoryCounts = documents.flatMap { $0.userCategories }
-            .reduce(into: [:]) { counts, category in
-                counts[category, default: 0] += 1
-            }
-            .sorted { $0.value > $1.value }
-            .prefix(3)
-            .map { $0.key }
-
-        return LibraryStats(
-            totalDocuments: documents.count,
-            totalReadTime: totalReadTime,
-            documentsThisWeek: documentsThisWeek,
-            topCategories: Array(categoryCounts)
+    /// Every finished save, newest first, for the Profile stats and the weekly summary
+    func fetchCompletedDocuments() async throws -> [Document] {
+        try await supabase.fetch(
+            from: "documents",
+            filters: ["processing_status": "eq.completed"],
+            order: "created_at.desc"
         )
     }
 }
@@ -202,6 +252,24 @@ class DocumentService {
 // MARK: - Demo Data
 
 extension DocumentService {
+    /// Demo-mode stand-in for `tags`: one tag per distinct AI topic across the documents.
+    /// Filter demo documents by a tag with `document.aiTopics?.contains(tag.name)`.
+    /// `userId` is passed in because `AuthService` is main-actor isolated and this service is not.
+    func demoTags(for documents: [Document], userId: UUID) -> [Tag] {
+        let names = Set(documents.flatMap { $0.aiTopics ?? [] })
+        return names
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            .map { name in
+                Tag(
+                    id: UUID(),
+                    userId: userId,
+                    name: name,
+                    slug: name.lowercased().filter { $0.isLetter || $0.isNumber },
+                    createdAt: Date()
+                )
+            }
+    }
+
     func fetchDemoDocuments() -> [Document] {
         return Document.previews + [
             Document(

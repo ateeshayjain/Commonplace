@@ -2,11 +2,12 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var authService: AuthService
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: Tab = .library
 
     enum Tab: Hashable {
         case library
-        case search
+        case quotes
         case profile
     }
 
@@ -18,29 +19,45 @@ struct ContentView: View {
                 AuthView()
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            // A launch while offline leaves the profile unloaded; try again
+            if phase == .active {
+                Task { await authService.loadProfile() }
+            }
+        }
     }
 
     private var mainTabView: some View {
         TabView(selection: $selectedTab) {
             LibraryView()
+                .safeAreaInset(edge: .bottom) { NowPlayingBar() }
                 .tabItem {
                     Label("Library", systemImage: "books.vertical")
                 }
                 .tag(Tab.library)
 
-            SearchView()
+            // Search lives in the Library's search box; the centre tab is the reader's quotes
+            QuotesView()
+                .safeAreaInset(edge: .bottom) { NowPlayingBar() }
                 .tabItem {
-                    Label("Search", systemImage: "magnifyingglass")
+                    Label("Quotes", systemImage: "bookmark")
                 }
-                .tag(Tab.search)
+                .tag(Tab.quotes)
 
             ProfileView()
+                .safeAreaInset(edge: .bottom) { NowPlayingBar() }
                 .tabItem {
                     Label("Profile", systemImage: "person")
                 }
                 .tag(Tab.profile)
         }
         .tint(.cpTint)
+        // The quote widget opens commonplace://quotes
+        .onOpenURL { url in
+            if url.scheme == "commonplace", url.host == "quotes" {
+                selectedTab = .quotes
+            }
+        }
     }
 }
 

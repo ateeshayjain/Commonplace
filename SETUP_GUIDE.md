@@ -62,7 +62,7 @@ Demo mode uses local sample data and doesn't require Supabase or Claude API.
 
 4. Set your Claude API key as a secret:
    ```bash
-   supabase secrets set CLAUDE_API_KEY=sk-ant-your-key-here
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-your-key-here
    ```
 
 5. Deploy the function:
@@ -117,7 +117,8 @@ Demo mode uses local sample data and doesn't require Supabase or Claude API.
 ### Demo Mode (No backend required)
 - ✅ View sample documents
 - ✅ Browse library
-- ✅ Search (local only)
+- ✅ Library search (local only)
+- ✅ Quotes tab, Weekly Summary and the Daily Quote widget
 - ✅ View document details
 - ❌ Save new URLs
 - ❌ AI summaries

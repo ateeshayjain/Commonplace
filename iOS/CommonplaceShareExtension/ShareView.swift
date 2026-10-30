@@ -1,329 +1,294 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import ImageIO
 
+/// Quick save: find the shared link (or the shared screenshots), send it to
+/// process-url, show "Saved", and close. No form; tags and categories are
+/// added later in the app.
 struct ShareView: View {
     let extensionContext: NSExtensionContext?
     let onComplete: () -> Void
     let onCancel: () -> Void
 
-    @State private var url: String = ""
-    @State private var title: String = ""
-    @State private var selectedCategories: Set<String> = []
-    @State private var isLoading = false
-    @State private var isSaved = false
-    @State private var error: String?
+    private enum Phase {
+        case saving(String)
+        case saved(String)
+        case failed(String)
+    }
 
-    private let categories = [
-        ("Technology", "💻"),
-        ("Business", "📊"),
-        ("Health", "🏥"),
-        ("Science", "🔬"),
-        ("Culture", "🎭"),
-        ("Design", "🎨")
-    ]
+    @State private var phase: Phase = .saving("Saving to Sangrah…")
+
+    // Brand accent (the app's AccentColor asset is not bundled in the extension)
+    private let accent = Color(red: 0x3F / 255, green: 0x51 / 255, blue: 0xB5 / 255)
 
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                if isSaved {
-                    savedConfirmation
-                } else {
-                    saveForm
-                }
-            }
-            .navigationTitle("Save to Commonplace")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        onCancel()
-                    }
-                }
-            }
-        }
-        .task {
-            await extractSharedContent()
-        }
-    }
-
-    private var saveForm: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Preview
-                VStack(alignment: .leading, spacing: 8) {
-                    if !title.isEmpty {
-                        Text(title)
-                            .font(.headline)
-                            .lineLimit(2)
-                    }
-
-                    Text(url)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(12)
-
-                // Categories
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Categories (optional)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
-                        ForEach(categories, id: \.0) { category in
-                            CategoryChipView(
-                                name: category.0,
-                                icon: category.1,
-                                isSelected: selectedCategories.contains(category.0),
-                                action: {
-                                    if selectedCategories.contains(category.0) {
-                                        selectedCategories.remove(category.0)
-                                    } else {
-                                        selectedCategories.insert(category.0)
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(minLength: 20)
-
-                // Error
-                if let error = error {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-
-                // Actions
-                VStack(spacing: 12) {
-                    Button(action: save) {
-                        if isLoading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Text("Save")
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.accentColor)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
-                    .disabled(isLoading || url.isEmpty)
-                }
-            }
-            .padding()
-        }
-    }
-
-    private var savedConfirmation: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.green)
-
-            Text("Saved!")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text("Processing in background.\nWe'll notify you when it's ready.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-
-            Spacer()
-
-            Button("Done") {
-                onComplete()
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color.accentColor)
-            .foregroundColor(.white)
-            .cornerRadius(12)
-        }
-        .padding()
-    }
-
-    private func extractSharedContent() async {
-        guard let extensionContext = extensionContext,
-              let item = extensionContext.inputItems.first as? NSExtensionItem,
-              let attachments = item.attachments else {
-            return
-        }
-
-        for attachment in attachments {
-            // Try URL first
-            if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                do {
-                    if let sharedURL = try await attachment.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL {
-                        self.url = sharedURL.absoluteString
-                    }
-                } catch {
-                    print("Failed to load URL: \(error)")
-                }
-            }
-
-            // Try plain text
-            if attachment.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                do {
-                    if let text = try await attachment.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String {
-                        if let sharedURL = URL(string: text), sharedURL.scheme != nil {
-                            self.url = text
-                        } else {
-                            self.title = String(text.prefix(100))
-                        }
-                    }
-                } catch {
-                    print("Failed to load text: \(error)")
-                }
-            }
-        }
-
-        // Try to get title
-        if let attributedTitle = item.attributedTitle?.string {
-            self.title = attributedTitle
-        } else if let contentText = item.attributedContentText?.string, title.isEmpty {
-            self.title = String(contentText.prefix(100))
-        }
-    }
-
-    private func save() {
-        isLoading = true
-        error = nil
-
-        Task {
-            do {
-                try await ShareExtensionService.shared.saveURL(
-                    url,
-                    categories: Array(selectedCategories)
-                )
-
-                await MainActor.run {
-                    isSaved = true
-                    // Haptic feedback
-                    let generator = UINotificationFeedbackGenerator()
-                    generator.notificationOccurred(.success)
-                }
-
-                // Auto-dismiss after delay
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                onComplete()
-
-            } catch {
-                await MainActor.run {
-                    self.error = error.localizedDescription
-                    isLoading = false
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Category Chip
-
-struct CategoryChipView: View {
-    let name: String
-    let icon: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Text(icon)
-                    .font(.system(size: 12))
-                Text(name)
+        VStack(spacing: 16) {
+            switch phase {
+            case .saving(let message):
+                ProgressView()
+                    .controlSize(.large)
+                Text(message)
+                    .font(.headline)
+            case .saved(let detail):
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(accent)
+                Text("Saved to Sangrah")
+                    .font(.headline)
+                Text(detail)
                     .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            case .failed(let message):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(.orange)
+                Text("Couldn't save")
+                    .font(.headline)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Done", action: onCancel)
+                    .buttonStyle(.borderedProminent)
+                    .tint(accent)
+                    .padding(.top, 4)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isSelected ? Color.accentColor : Color(.systemGray6))
-            .foregroundColor(isSelected ? .white : .primary)
-            .cornerRadius(20)
         }
+        .padding(28)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemBackground))
+        .task { await saveShared() }
+    }
+
+    /// A link wins when there is one (Safari can attach a preview image too);
+    /// otherwise shared images are saved together as one screenshot save
+    private func saveShared() async {
+        do {
+            if let url = await sharedURL() {
+                try await ShareExtensionService.shared.saveURL(url)
+                finish("The summary will be ready in a moment.")
+                return
+            }
+            let images = sharedImages()
+            guard !images.isEmpty else {
+                phase = .failed("No link or image was found in what you shared.")
+                return
+            }
+            let total = images.count
+            phase = .saving(total == 1 ? "Saving screenshot…" : "Saving \(total) screenshots…")
+            try await ShareExtensionService.shared.saveScreenshots(images) { uploaded in
+                phase = .saving("Uploading \(uploaded + 1) of \(total)…")
+            }
+            finish("Sangrah is reading \(total == 1 ? "it" : "them in order"). The article will be ready in a minute.")
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    private func finish(_ detail: String) {
+        phase = .saved(detail)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            onComplete()
+        }
+    }
+
+    /// Image attachments in the order they were shared (the order picked in Photos)
+    private func sharedImages() -> [NSItemProvider] {
+        guard let items = extensionContext?.inputItems as? [NSExtensionItem] else { return [] }
+        return items
+            .flatMap { $0.attachments ?? [] }
+            .filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }
+            .prefix(ShareExtensionService.maxScreenshots)
+            .map { $0 }
+    }
+
+    /// The first URL among the shared items: a URL attachment, or plain text
+    /// that is itself a URL (how X and some other apps share links).
+    private func sharedURL() async -> String? {
+        guard let items = extensionContext?.inputItems as? [NSExtensionItem] else { return nil }
+        for item in items {
+            for attachment in item.attachments ?? [] {
+                if attachment.hasItemConformingToTypeIdentifier(UTType.url.identifier),
+                   let url = try? await attachment.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL,
+                   url.scheme?.hasPrefix("http") == true {
+                    return url.absoluteString
+                }
+            }
+            for attachment in item.attachments ?? [] {
+                if attachment.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
+                   let text = try? await attachment.loadItem(forTypeIdentifier: UTType.plainText.identifier) as? String,
+                   let url = firstURL(in: text) {
+                    return url
+                }
+            }
+        }
+        return nil
+    }
+
+    private func firstURL(in text: String) -> String? {
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let range = NSRange(text.startIndex..., in: text)
+        return detector?.firstMatch(in: text, range: range)?.url?.absoluteString
     }
 }
 
 // MARK: - Share Extension Service
 
-class ShareExtensionService {
+final class ShareExtensionService {
     static let shared = ShareExtensionService()
 
-    // These would come from a shared config
-    private let supabaseURL = "YOUR_SUPABASE_URL"
-    private let supabaseKey = "YOUR_SUPABASE_ANON_KEY"
+    /// Matches SCREENSHOT_MAX_COUNT in process-url and the activation rule in Info.plist
+    static let maxScreenshots = 10
+    /// Long edge after resizing: plenty for reading text, a few hundred KB each
+    private static let screenshotMaxPixels = 1800
 
-    func saveURL(_ url: String, categories: [String]) async throws {
-        // Get auth token from shared keychain
-        guard let token = getSharedAuthToken() else {
-            throw ShareError.notAuthenticated
+    func saveURL(_ url: String) async throws {
+        // Same session as the app: refreshed here when the access token is near expiry
+        let sessions = SessionManager.shared
+        var status = try await post(url, token: accessToken(from: sessions))
+        if status == 401 {
+            status = try await post(url, token: accessToken(from: sessions, forceRefresh: true))
         }
-
-        var request = URLRequest(url: URL(string: "\(supabaseURL)/functions/v1/process-url")!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(supabaseKey, forHTTPHeaderField: "apikey")
-
-        let body: [String: Any] = [
-            "url": url,
-            "categories": categories
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw ShareError.saveFailed
+        switch status {
+        case 200...299: return
+        case 401, 403: throw ShareError.notAuthenticated
+        default: throw ShareError.saveFailed
         }
     }
 
-    private func getSharedAuthToken() -> String? {
-        // For demo mode, return a demo token
-        // In production, this would read from shared keychain
+    /// Uploads the images to screenshots/{user}/{batch}/{n}.jpg, then asks
+    /// process-url to read them, in order, into one saved article
+    @MainActor
+    func saveScreenshots(_ providers: [NSItemProvider], progress: @escaping (Int) -> Void) async throws {
+        let sessions = SessionManager.shared
+        var token = try await accessToken(from: sessions)
+        guard let userId = Self.userId(fromAccessToken: token) else { throw ShareError.notAuthenticated }
 
-        // Read from shared keychain (App Group)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: "supabase_token",
-            kSecAttrAccessGroup as String: "group.app.commonplace",
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let token = String(data: data, encoding: .utf8) else {
-            // Return demo token for testing
-            return "demo_token"
+        let batch = UUID().uuidString.lowercased()
+        var paths: [String] = []
+        for (index, provider) in providers.enumerated() {
+            progress(index)
+            guard let jpeg = await Self.resizedJPEG(from: provider) else { continue }
+            let path = "\(userId)/\(batch)/\(index + 1).jpg"
+            var status = try await upload(jpeg, to: path, token: token)
+            if status == 401 {
+                token = try await accessToken(from: sessions, forceRefresh: true)
+                status = try await upload(jpeg, to: path, token: token)
+            }
+            guard (200...299).contains(status) else {
+                throw status == 401 || status == 403 ? ShareError.notAuthenticated : ShareError.saveFailed
+            }
+            paths.append(path)
         }
+        guard !paths.isEmpty else { throw ShareError.unreadableImages }
 
-        return token
+        let body: [String: Any] = ["screenshots": paths, "categories": []]
+        var status = try await post(body, token: token)
+        if status == 401 {
+            status = try await post(body, token: try await accessToken(from: sessions, forceRefresh: true))
+        }
+        switch status {
+        case 200...299: return
+        case 401, 403: throw ShareError.notAuthenticated
+        default: throw ShareError.saveFailed
+        }
+    }
+
+    private func upload(_ jpeg: Data, to path: String, token: String) async throws -> Int {
+        var request = URLRequest(url: URL(string: "\(Config.supabaseURL)/storage/v1/object/screenshots/\(path)")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+
+        let (_, response) = try await URLSession.shared.upload(for: request, from: jpeg)
+        guard let http = response as? HTTPURLResponse else { throw ShareError.saveFailed }
+        return http.statusCode
+    }
+
+    /// The signed-in user's id: the `sub` claim of the access token (a JWT).
+    /// Only used to name the upload folder; the server checks it against the token.
+    static func userId(fromAccessToken token: String) -> String? {
+        let parts = token.split(separator: ".")
+        guard parts.count == 3 else { return nil }
+        var payload = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let data = Data(base64Encoded: payload),
+              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sub = claims["sub"] as? String else { return nil }
+        return sub.lowercased()
+    }
+
+    /// A JPEG no larger than screenshotMaxPixels on its long edge. ImageIO reads a
+    /// downscaled copy straight from the file, so a full-size image is never decoded
+    /// (share extensions get little memory).
+    static func resizedJPEG(from provider: NSItemProvider) async -> Data? {
+        guard let item = try? await provider.loadItem(forTypeIdentifier: UTType.image.identifier) else { return nil }
+
+        let source: CGImageSource?
+        switch item {
+        case let url as URL: source = CGImageSourceCreateWithURL(url as CFURL, nil)
+        case let data as Data: source = CGImageSourceCreateWithData(data as CFData, nil)
+        case let image as UIImage:
+            guard let data = image.jpegData(compressionQuality: 0.9) else { return nil }
+            source = CGImageSourceCreateWithData(data as CFData, nil)
+        default: source = nil
+        }
+        guard let source else { return nil }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: screenshotMaxPixels,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.75)
+    }
+
+    private func accessToken(from sessions: SessionManager, forceRefresh: Bool = false) async throws -> String {
+        do {
+            return try await sessions.validAccessToken(forceRefresh: forceRefresh)
+        } catch SessionError.signedOut {
+            throw ShareError.notAuthenticated
+        }
+    }
+
+    private func post(_ url: String, token: String) async throws -> Int {
+        try await post(["url": url, "categories": []], token: token)
+    }
+
+    private func post(_ body: [String: Any], token: String) async throws -> Int {
+        var request = URLRequest(url: URL(string: Config.processURLEndpoint)!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(Config.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 20
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw ShareError.saveFailed }
+        return http.statusCode
     }
 }
 
 enum ShareError: LocalizedError {
     case notAuthenticated
     case saveFailed
+    case unreadableImages
 
     var errorDescription: String? {
         switch self {
         case .notAuthenticated:
-            return "Please sign in to the Commonplace app first"
+            return "Open Sangrah and sign in, then share again."
         case .saveFailed:
-            return "Failed to save. Please try again."
+            return "The save didn't go through. Please try again."
+        case .unreadableImages:
+            return "Those images couldn't be opened. Try sharing them again from Photos."
         }
     }
 }

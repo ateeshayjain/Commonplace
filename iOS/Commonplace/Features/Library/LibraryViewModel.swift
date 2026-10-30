@@ -5,8 +5,21 @@ import SwiftUI
 class LibraryViewModel: ObservableObject {
     @Published var documents: [Document] = []
     @Published var filteredDocuments: [Document] = []
-    @Published var categories: [Category] = Category.systemCategories
     @Published var isLoading = false
+    /// Links saved from this device whose AI processing has not finished yet.
+    @Published var pendingSaveCount = 0
+    /// Second filter axis next to categories: where the item came from.
+    @Published var selectedSource: SourceType? {
+        didSet { applyFilters() }
+    }
+
+    /// Sources present in the loaded documents, most common first.
+    var availableSources: [SourceType] {
+        var counts: [SourceType: Int] = [:]
+        for document in documents { counts[document.sourceType, default: 0] += 1 }
+        return counts.sorted { $0.value == $1.value ? $0.key.displayName < $1.key.displayName : $0.value > $1.value }
+            .map(\.key)
+    }
     @Published var error: Error?
     @Published var sortOrder: SortOrder = .newest {
         didSet {
@@ -15,6 +28,42 @@ class LibraryViewModel: ObservableObject {
     }
 
     private let documentService = DocumentService.shared
+    private var deletionObserver: NSObjectProtocol?
+    private var updateObserver: NSObjectProtocol?
+
+    init() {
+        deletionObserver = NotificationCenter.default.addObserver(
+            forName: .documentDeleted, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let id = note.object as? UUID else { return }
+            Task { @MainActor in self?.removeDocument(id: id) }
+        }
+        updateObserver = NotificationCenter.default.addObserver(
+            forName: .documentUpdated, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let document = note.object as? Document else { return }
+            Task { @MainActor in self?.replaceDocument(document) }
+        }
+    }
+
+    deinit {
+        if let deletionObserver { NotificationCenter.default.removeObserver(deletionObserver) }
+        if let updateObserver { NotificationCenter.default.removeObserver(updateObserver) }
+    }
+
+    /// Show an edit made elsewhere (e.g. a new title from its detail screen) without a reload.
+    func replaceDocument(_ document: Document) {
+        WidgetQuoteSync.shared.documentsLoaded([document])
+        if let index = documents.firstIndex(where: { $0.id == document.id }) { documents[index] = document }
+        if let index = filteredDocuments.firstIndex(where: { $0.id == document.id }) { filteredDocuments[index] = document }
+    }
+
+    /// Drop a document deleted elsewhere (e.g. from its detail screen) without a reload.
+    func removeDocument(id: UUID) {
+        WidgetQuoteSync.shared.documentDeleted(id)
+        documents.removeAll { $0.id == id }
+        filteredDocuments.removeAll { $0.id == id }
+    }
     private var searchQuery = ""
 
     enum SortOrder {
@@ -69,8 +118,8 @@ class LibraryViewModel: ObservableObject {
                 documents = try await documentService.fetchDocuments(category: category)
             }
 
-            filteredDocuments = documents
-            sortDocuments()
+            WidgetQuoteSync.shared.documentsLoaded(documents)
+            applyFilters()
         } catch {
             self.error = error
         }
@@ -78,27 +127,48 @@ class LibraryViewModel: ObservableObject {
         isLoading = false
     }
 
-    func refresh() async {
-        await loadDocuments()
+    func refresh(category: String? = nil) async {
+        await loadDocuments(category: category)
     }
 
     // MARK: - Filtering & Sorting
 
     func filterDocuments(query: String) {
         searchQuery = query
+        applyFilters()
+    }
 
-        if query.isEmpty {
-            filteredDocuments = documents
-        } else {
-            let lowercased = query.lowercased()
-            filteredDocuments = documents.filter { document in
-                document.title.lowercased().contains(lowercased) ||
-                document.authorName?.lowercased().contains(lowercased) == true ||
-                document.aiSummaryShort?.lowercased().contains(lowercased) == true ||
-                document.userCategories.contains { $0.lowercased().contains(lowercased) }
+    /// Client-side filters on top of what the server returned: source and search text.
+    private func applyFilters() {
+        var result = documents
+        if let source = selectedSource {
+            result = result.filter { $0.sourceType == source }
+        }
+        if !searchQuery.isEmpty {
+            let query = searchQuery
+            result = result.filter { document in
+                // The Library box is the only search now (the centre tab is Quotes),
+                // so it reads the saved text too, not just titles and summaries
+                let fields: [String?] = [
+                    document.title,
+                    document.authorName,
+                    document.authorHandle,
+                    document.aiSummaryShort,
+                    document.userNotes,
+                    document.bodyPlain,
+                ]
+                let lists: [[String]?] = [
+                    document.userCategories,
+                    // Tags are no longer a filter row, so let the search box find them
+                    document.aiTopics,
+                    document.aiKeyPoints,
+                    document.aiQuotableLines,
+                ]
+                return fields.contains { $0?.localizedCaseInsensitiveContains(query) == true } ||
+                    lists.contains { $0?.contains { $0.localizedCaseInsensitiveContains(query) } == true }
             }
         }
-
+        filteredDocuments = result
         sortDocuments()
     }
 
@@ -237,18 +307,43 @@ class LibraryViewModel: ObservableObject {
             return
         }
 
-        // Real mode: call the API
-        isLoading = true
+        // Real mode: process-url returns as soon as the row exists and keeps
+        // working in the background (fetching, extracting, enriching), so the
+        // Library, which lists completed documents only, would miss it if we
+        // refreshed just once. Return now so the sheet can close, then poll.
         do {
             let response = try await documentService.saveURL(urlString)
-            print("Saved URL: \(response)")
-            await loadDocuments() // Refresh to get the new document
             HapticManager.saveSuccess()
+            pendingSaveCount += 1
+            Task { await waitForProcessing(of: response.id) }
         } catch {
             self.error = error
             HapticManager.error()
         }
-        isLoading = false
+    }
+
+    /// Polls one document until it leaves the processing pipeline, then
+    /// refreshes the list. Gives up after about two minutes.
+    private func waitForProcessing(of id: UUID) async {
+        defer { pendingSaveCount = max(0, pendingSaveCount - 1) }
+        let deadline = Date().addingTimeInterval(120)
+        while Date() < deadline {
+            try? await Task.sleep(for: .seconds(2))
+            guard let document = try? await documentService.fetchDocument(id: id) else { continue }
+            switch document.processingStatus {
+            case .completed:
+                await loadDocuments()
+                return
+            case .failed:
+                self.error = DocumentProcessingError(
+                    message: document.processingError ?? "We couldn't process that link."
+                )
+                return
+            default:
+                continue
+            }
+        }
+        await loadDocuments()
     }
 
     // MARK: - Helpers
@@ -268,4 +363,10 @@ class LibraryViewModel: ObservableObject {
             return formatter.string(from: date)
         }
     }
+}
+
+/// Surfaced when process-url marks a document as failed.
+struct DocumentProcessingError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
