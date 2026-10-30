@@ -60,13 +60,14 @@ struct DocumentDetailView: View {
                 // Categories
                 categoriesSection
 
-                // Content preview / PDF
-                if document.pdfUrl != nil {
-                    pdfPreviewSection
-                } else {
+                // Content preview, then the PDF. Every save gets both: the PDF is
+                // made on first open, so a stored pdfUrl only means it was opened
+                // or shared before
+                if !document.bodyPlain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     contentPreviewSection(proxy: proxy)
                         .id(Self.contentAnchor)
                 }
+                pdfPreviewSection
 
                 // User notes
                 notesSection
