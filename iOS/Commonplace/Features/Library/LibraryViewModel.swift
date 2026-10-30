@@ -5,7 +5,6 @@ import SwiftUI
 class LibraryViewModel: ObservableObject {
     @Published var documents: [Document] = []
     @Published var filteredDocuments: [Document] = []
-    @Published var categories: [Category] = Category.systemCategories
     @Published var isLoading = false
     /// Links saved from this device whose AI processing has not finished yet.
     @Published var pendingSaveCount = 0

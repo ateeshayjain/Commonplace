@@ -213,6 +213,17 @@ class AuthService: NSObject, ObservableObject {
         SharedAuthStore.clear()
     }
 
+    /// Deletes the account and everything in it on the server (delete-account),
+    /// then signs out. The demo account has nothing on the server, so it just signs out.
+    func deleteAccount() async throws {
+        if currentUser?.email != "demo@commonplace.app" {
+            struct Response: Decodable { let deleted: Bool }
+            let response: Response = try await SupabaseService.shared.invokeFunction(name: "delete-account")
+            guard response.deleted else { throw SupabaseError.invalidResponse }
+        }
+        signOut()
+    }
+
     // MARK: - Private Helpers
 
     private func handleAuthResponse(_ response: AuthResponse) async {

@@ -7,6 +7,9 @@ struct ProfileView: View {
     @State private var showingSignOutAlert = false
     @State private var showingContactOptions = false
     @State private var showingCopiedAddress = false
+    @State private var showingDeleteAccount = false
+    @State private var isDeletingAccount = false
+    @State private var deleteAccountError: Error?
 
     var body: some View {
         NavigationStack {
@@ -93,7 +96,7 @@ struct ProfileView: View {
                 // Settings
                 Section("Settings") {
                     NavigationLink {
-                        CategoriesSettingsView(categories: $viewModel.categories)
+                        CategoriesSettingsView()
                     } label: {
                         SettingsRow(icon: "folder", title: "Manage Categories")
                     }
@@ -134,6 +137,26 @@ struct ProfileView: View {
                     }
                 }
 
+                // Delete account
+                Section {
+                    Button(role: .destructive) {
+                        showingDeleteAccount = true
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if isDeletingAccount {
+                                ProgressView()
+                            } else {
+                                Text("Delete Account")
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(isDeletingAccount)
+                } footer: {
+                    Text("Permanently deletes your account and everything you've saved.")
+                }
+
                 // App version
                 Section {
                     HStack {
@@ -154,6 +177,20 @@ struct ProfileView: View {
                 }
             } message: {
                 Text("Are you sure you want to sign out?")
+            }
+            .alert("Delete your account?", isPresented: $showingDeleteAccount) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete Account", role: .destructive) { deleteAccount() }
+            } message: {
+                Text("This permanently deletes your saves, quotes, notes, PDFs and screenshots. It can't be undone.")
+            }
+            .alert("Couldn't Delete Your Account", isPresented: .init(
+                get: { deleteAccountError != nil },
+                set: { if !$0 { deleteAccountError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Nothing was lost. Check your connection and try again, or contact support.")
             }
             .confirmationDialog("Contact Support", isPresented: $showingContactOptions, titleVisibility: .visible) {
                 Button("Email in Mail") { openSupportEmail(SupportContact.mailURL) }
@@ -182,6 +219,20 @@ struct ProfileView: View {
         }
     }
 
+    private func deleteAccount() {
+        isDeletingAccount = true
+        Task {
+            defer { isDeletingAccount = false }
+            do {
+                try await authService.deleteAccount()
+                HapticManager.saveSuccess()
+            } catch {
+                deleteAccountError = error
+                HapticManager.error()
+            }
+        }
+    }
+
     private func copySupportAddress() {
         UIPasteboard.general.string = SupportContact.email
         showingCopiedAddress = true
@@ -195,7 +246,6 @@ class ProfileViewModel: ObservableObject {
     @Published var documentCount: Int = 0
     @Published var totalReadingMinutes: Int = 0
     @Published var documentsThisWeek: Int = 0
-    @Published var categories: [Category] = Category.systemCategories
     /// Saves from the last 7 days, newest first
     @Published var weeklyDocuments: [Document] = []
 
@@ -349,31 +399,30 @@ struct SettingsRow: View {
 // MARK: - Settings Views
 
 struct CategoriesSettingsView: View {
-    @Binding var categories: [Category]
+    @ObservedObject private var categoryService = CategoryService.shared
     @State private var newCategoryName = ""
     @State private var showingAddCategory = false
+    @State private var showingDuplicate = false
+
+    private var builtIn: [Category] { categoryService.categories.filter(\.isSystem) }
+    private var own: [Category] { categoryService.categories.filter { !$0.isSystem } }
 
     var body: some View {
         List {
-            Section("Your Categories") {
-                ForEach(categories) { category in
-                    HStack {
-                        Text(category.icon ?? "📁")
-                        Text(category.name)
-                        Spacer()
-                        if category.isSystem {
-                            Text("System")
-                                .font(.cpCaption1)
-                                .foregroundColor(.cpTextTertiary)
-                        }
+            Section {
+                if own.isEmpty {
+                    Text("Categories you add appear here, in the Library filters and when you file a save.")
+                        .font(.cpSubhead)
+                        .foregroundColor(.cpTextSecondary)
+                } else {
+                    ForEach(own) { category in
+                        categoryRow(category)
+                    }
+                    .onDelete { offsets in
+                        offsets.map { own[$0] }.forEach(categoryService.remove)
                     }
                 }
-                .onDelete { indexSet in
-                    categories.remove(atOffsets: indexSet)
-                }
-            }
 
-            Section {
                 Button {
                     showingAddCategory = true
                 } label: {
@@ -383,30 +432,60 @@ struct CategoriesSettingsView: View {
                         Text("Add Category")
                     }
                 }
+            } header: {
+                Text("Your Categories")
+            } footer: {
+                if !own.isEmpty {
+                    Text("Swipe left to remove one. Saves already filed under it keep the label.")
+                }
+            }
+
+            Section {
+                ForEach(builtIn) { category in
+                    categoryRow(category)
+                }
+            } header: {
+                Text("Built In")
+            } footer: {
+                Text("Sangrah files new saves under these automatically.")
             }
         }
         .navigationTitle("Categories")
+        .task {
+            await categoryService.load()
+        }
         .alert("Add Category", isPresented: $showingAddCategory) {
             TextField("Category Name", text: $newCategoryName)
             Button("Cancel", role: .cancel) {
                 newCategoryName = ""
             }
             Button("Add") {
-                if !newCategoryName.isEmpty {
-                    let newCategory = Category(
-                        id: UUID(),
-                        userId: AuthService.shared.currentUser?.id,
-                        name: newCategoryName,
-                        slug: newCategoryName.lowercased().replacingOccurrences(of: " ", with: "-"),
-                        icon: "📁",
-                        color: "#007AFF",
-                        isSystem: false,
-                        sortOrder: categories.count
-                    )
-                    categories.append(newCategory)
-                    newCategoryName = ""
+                let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+                newCategoryName = ""
+                if !name.isEmpty && !categoryService.add(named: name) {
+                    showingDuplicate = true
                 }
             }
+        }
+        .alert("Already a Category", isPresented: $showingDuplicate) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("There's already a category with that name.")
+        }
+        .alert("Couldn't Save Categories", isPresented: .init(
+            get: { categoryService.error != nil },
+            set: { if !$0 { categoryService.error = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(categoryService.error?.localizedDescription ?? "Something went wrong.")
+        }
+    }
+
+    private func categoryRow(_ category: Category) -> some View {
+        HStack {
+            Text(category.icon ?? "📁")
+            Text(category.name)
         }
     }
 }

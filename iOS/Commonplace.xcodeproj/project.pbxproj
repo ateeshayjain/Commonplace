@@ -54,6 +54,7 @@
 		A1000066 /* QuotesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000066 /* QuotesViewModel.swift */; };
 		A1000065 /* QuotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000065 /* QuotesView.swift */; };
 		A1000064 /* SavedQuoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000064 /* SavedQuoteService.swift */; };
+		A1000068 /* CategoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000068 /* CategoryService.swift */; };
 		A1000063 /* SavedQuote.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000063 /* SavedQuote.swift */; };
 		A1000061 /* QuoteCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000061 /* QuoteCard.swift */; };
 		A1000050 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000050 /* ShareViewController.swift */; };
@@ -138,6 +139,7 @@
 		B1000066 /* QuotesViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotesViewModel.swift; sourceTree = "<group>"; };
 		B1000065 /* QuotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotesView.swift; sourceTree = "<group>"; };
 		B1000064 /* SavedQuoteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedQuoteService.swift; sourceTree = "<group>"; };
+		B1000068 /* CategoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryService.swift; sourceTree = "<group>"; };
 		B1000063 /* SavedQuote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedQuote.swift; sourceTree = "<group>"; };
 		B1000061 /* QuoteCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteCard.swift; sourceTree = "<group>"; };
 		B1000050 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
@@ -304,6 +306,7 @@
 				B1000054 /* SharedAuthStore.swift */,
 				B1000009 /* DocumentService.swift */,
 				B1000064 /* SavedQuoteService.swift */,
+				B1000068 /* CategoryService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -561,6 +564,7 @@
 				A1000066 /* QuotesViewModel.swift in Sources */,
 				A1000065 /* QuotesView.swift in Sources */,
 				A1000064 /* SavedQuoteService.swift in Sources */,
+				A1000068 /* CategoryService.swift in Sources */,
 				A1000063 /* SavedQuote.swift in Sources */,
 				A1000061 /* QuoteCard.swift in Sources */,
 			);

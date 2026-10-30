@@ -108,7 +108,7 @@ struct PrivacyPolicyView: View {
         Part(heading: "What Sangrah doesn't do",
              text: "No ads, no tracking across other apps or websites, and your data is never sold or shared for marketing."),
         Part(heading: "Deleting your data",
-             text: "You can delete any save from its \u{22EF} menu. To delete your account and everything in it, email \(SupportContact.email)."),
+             text: "You can delete any save from its \u{22EF} menu. To delete your account and everything in it, including your saves, quotes, notes, PDFs and screenshots, go to Profile and tap Delete Account."),
         Part(heading: "Questions",
              text: "Email \(SupportContact.email). This policy covers the Sangrah beta and was last updated on 30 October 2026.")
     ]

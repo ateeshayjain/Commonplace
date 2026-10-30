@@ -137,7 +137,7 @@ struct DocumentDetailView: View {
         }
         .sheet(isPresented: $showingCategorySheet) {
             CategorySelectionSheet(
-                categories: Category.systemCategories,
+                categories: CategoryService.shared.categories,
                 selectedCategories: $viewModel.selectedCategories
             )
         }

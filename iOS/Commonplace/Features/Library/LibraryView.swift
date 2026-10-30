@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LibraryView: View {
     @StateObject private var viewModel = LibraryViewModel()
+    @ObservedObject private var categoryService = CategoryService.shared
     @State private var selectedCategory: String? = nil
     @State private var searchText = ""
     @State private var showingAddURL = false
@@ -29,7 +30,7 @@ struct LibraryView: View {
 
                     // Category filter
                     CategoryFilterView(
-                        categories: viewModel.categories,
+                        categories: categoryService.categories,
                         selected: $selectedCategory
                     )
                     .padding(.bottom, viewModel.availableSources.count > 1 ? CPSpacing.xs : CPSpacing.md)
@@ -187,6 +188,9 @@ struct LibraryView: View {
         }
         .task {
             await viewModel.loadDocuments()
+        }
+        .task {
+            await categoryService.load()
         }
     }
 
