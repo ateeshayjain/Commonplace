@@ -67,7 +67,7 @@ struct ShareView: View {
         do {
             if let url = await sharedURL() {
                 try await ShareExtensionService.shared.saveURL(url)
-                finish("The summary will be ready in a moment.")
+                finish(PlanTierCache.isPro ? "The summary will be ready in a moment." : "It'll be in your Library in a moment.")
                 return
             }
             let images = sharedImages()
@@ -75,15 +75,43 @@ struct ShareView: View {
                 phase = .failed("No link or image was found in what you shared.")
                 return
             }
-            let total = images.count
-            phase = .saving(total == 1 ? "Saving screenshot…" : "Saving \(total) screenshots…")
-            try await ShareExtensionService.shared.saveScreenshots(images) { uploaded in
-                phase = .saving("Uploading \(uploaded + 1) of \(total)…")
+            if PlanTierCache.isPro, try await uploadForClaude(images) {
+                return
             }
-            finish("Sangrah is reading \(total == 1 ? "it" : "them in order"). The article will be ready in a minute.")
+            try await readOnDevice(images)
         } catch {
             phase = .failed(error.localizedDescription)
         }
+    }
+
+    /// Pro: uploads the screenshots for Claude to read and summarise. False
+    /// when the server says the account isn't Pro after all (a stale plan).
+    private func uploadForClaude(_ images: [NSItemProvider]) async throws -> Bool {
+        let total = images.count
+        phase = .saving(total == 1 ? "Saving screenshot…" : "Saving \(total) screenshots…")
+        do {
+            try await ShareExtensionService.shared.saveScreenshots(images) { uploaded in
+                phase = .saving("Uploading \(uploaded + 1) of \(total)…")
+            }
+        } catch ShareError.refused(let code, _) where code == "pro_required" {
+            PlanTierCache.store(isPro: false)
+            return false
+        }
+        finish("Sangrah is reading \(total == 1 ? "it" : "them in order"). The article will be ready in a minute.")
+        return true
+    }
+
+    /// Free: reads the screenshots on this iPhone and saves the text
+    private func readOnDevice(_ images: [NSItemProvider]) async throws {
+        let total = images.count
+        phase = .saving(total == 1 ? "Reading screenshot…" : "Reading \(total) screenshots…")
+        let article = await ScreenshotReader.article(from: images) { index in
+            if total > 1 { phase = .saving("Reading \(index + 1) of \(total)…") }
+        }
+        guard !article.body.isEmpty else { throw ShareError.noTextFound }
+        phase = .saving("Saving…")
+        try await ShareExtensionService.shared.saveScreenshotText(article)
+        finish("Saved as one article in your Library.")
     }
 
     private func finish(_ detail: String) {
@@ -146,16 +174,37 @@ final class ShareExtensionService {
     private static let screenshotMaxPixels = 1800
 
     func saveURL(_ url: String) async throws {
+        try await send(["url": url, "categories": []])
+    }
+
+    /// Screenshots read on the device (free accounts): the joined text only
+    func saveScreenshotText(_ article: ScreenshotText.Article) async throws {
+        try await send(["screenshotText": article.body, "title": article.title, "categories": []])
+    }
+
+    /// Posts to process-url as the signed-in user, refreshing the token once on a 401
+    private func send(_ body: [String: Any]) async throws {
         // Same session as the app: refreshed here when the access token is near expiry
         let sessions = SessionManager.shared
-        var status = try await post(url, token: accessToken(from: sessions))
-        if status == 401 {
-            status = try await post(url, token: accessToken(from: sessions, forceRefresh: true))
+        var reply = try await post(body, token: accessToken(from: sessions))
+        if reply.status == 401 {
+            reply = try await post(body, token: accessToken(from: sessions, forceRefresh: true))
         }
-        switch status {
+        try Self.check(reply)
+    }
+
+    /// Throws for anything but success; a refusal (the day's free saves used
+    /// up, a Pro-only feature) carries the server's own words
+    private static func check(_ reply: (status: Int, data: Data)) throws {
+        switch reply.status {
         case 200...299: return
         case 401, 403: throw ShareError.notAuthenticated
-        default: throw ShareError.saveFailed
+        default:
+            struct Refusal: Decodable { let error: String; let code: String }
+            if let refusal = try? JSONDecoder().decode(Refusal.self, from: reply.data) {
+                throw ShareError.refused(code: refusal.code, message: refusal.error)
+            }
+            throw ShareError.saveFailed
         }
     }
 
@@ -186,15 +235,11 @@ final class ShareExtensionService {
         guard !paths.isEmpty else { throw ShareError.unreadableImages }
 
         let body: [String: Any] = ["screenshots": paths, "categories": []]
-        var status = try await post(body, token: token)
-        if status == 401 {
-            status = try await post(body, token: try await accessToken(from: sessions, forceRefresh: true))
+        var reply = try await post(body, token: token)
+        if reply.status == 401 {
+            reply = try await post(body, token: try await accessToken(from: sessions, forceRefresh: true))
         }
-        switch status {
-        case 200...299: return
-        case 401, 403: throw ShareError.notAuthenticated
-        default: throw ShareError.saveFailed
-        }
+        try Self.check(reply)
     }
 
     private func upload(_ jpeg: Data, to path: String, token: String) async throws -> Int {
@@ -223,10 +268,16 @@ final class ShareExtensionService {
         return sub.lowercased()
     }
 
-    /// A JPEG no larger than screenshotMaxPixels on its long edge. ImageIO reads a
+    /// A JPEG no larger than screenshotMaxPixels on its long edge
+    static func resizedJPEG(from provider: NSItemProvider) async -> Data? {
+        guard let cgImage = await downscaledImage(from: provider, maxPixels: screenshotMaxPixels) else { return nil }
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.75)
+    }
+
+    /// The image no larger than maxPixels on its long edge. ImageIO reads a
     /// downscaled copy straight from the file, so a full-size image is never decoded
     /// (share extensions get little memory).
-    static func resizedJPEG(from provider: NSItemProvider) async -> Data? {
+    static func downscaledImage(from provider: NSItemProvider, maxPixels: Int) async -> CGImage? {
         guard let item = try? await provider.loadItem(forTypeIdentifier: UTType.image.identifier) else { return nil }
 
         let source: CGImageSource?
@@ -243,10 +294,9 @@ final class ShareExtensionService {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: screenshotMaxPixels,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
         ]
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.75)
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
     private func accessToken(from sessions: SessionManager, forceRefresh: Bool = false) async throws -> String {
@@ -257,11 +307,7 @@ final class ShareExtensionService {
         }
     }
 
-    private func post(_ url: String, token: String) async throws -> Int {
-        try await post(["url": url, "categories": []], token: token)
-    }
-
-    private func post(_ body: [String: Any], token: String) async throws -> Int {
+    private func post(_ body: [String: Any], token: String) async throws -> (status: Int, data: Data) {
         var request = URLRequest(url: URL(string: Config.processURLEndpoint)!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -270,9 +316,9 @@ final class ShareExtensionService {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         request.timeoutInterval = 20
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw ShareError.saveFailed }
-        return http.statusCode
+        return (http.statusCode, data)
     }
 }
 
@@ -280,6 +326,9 @@ enum ShareError: LocalizedError {
     case notAuthenticated
     case saveFailed
     case unreadableImages
+    case noTextFound
+    /// The server turned the save down: the day's free saves are used up, or a Pro-only feature
+    case refused(code: String, message: String)
 
     var errorDescription: String? {
         switch self {
@@ -289,6 +338,10 @@ enum ShareError: LocalizedError {
             return "The save didn't go through. Please try again."
         case .unreadableImages:
             return "Those images couldn't be opened. Try sharing them again from Photos."
+        case .noTextFound:
+            return "No text was found in those screenshots."
+        case .refused(_, let message):
+            return message
         }
     }
 }

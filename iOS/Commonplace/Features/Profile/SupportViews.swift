@@ -66,7 +66,11 @@ struct FAQView: View {
         Item(question: "How do I delete a save?",
              answer: "Open it, tap \u{22EF} and choose Delete."),
         Item(question: "Is Sangrah free?",
-             answer: "Yes. During the beta everything is free, with no limits.")
+             answer: "Yes. You can save up to 5 articles a day and keep the clean text, the PDF, Listen, search, categories, notes and the widget, all free. Sangrah Pro (first month free) adds smart summaries, unlimited saves, screenshots read by Claude, and Compose."),
+        Item(question: ProCopy.whyItCostsQuestion,
+             answer: ProCopy.whyItCosts),
+        Item(question: "How do I cancel Sangrah Pro?",
+             answer: "In Profile, tap Manage Subscription, or go to Settings > Apple ID > Subscriptions. You keep Pro until the end of the period you've paid for. Deleting your account doesn't cancel the subscription, so cancel it first.")
     ]
 
     var body: some View {
@@ -100,9 +104,11 @@ struct PrivacyPolicyView: View {
         Part(heading: "What Sangrah stores",
              text: "Your account: your email address and, if you use Sign in with Apple, the name Apple shares. What you save: links, the text Sangrah reads from them, screenshots you share, and your notes, categories, tags and quotes. Sangrah also stores the PDFs it makes from your saves."),
         Part(heading: "How your saves are processed",
-             text: "Your data is stored with Supabase, which also handles sign-in. To read a link, Sangrah fetches the page directly or through a reader service (Jina Reader for articles, FxTwitter for posts on X). The text, or the screenshots, is then sent to Anthropic's Claude API to write the summary, key points, tags and quotes. Under Anthropic's commercial terms, this data isn't used to train its models."),
+             text: "Your data is stored with Supabase, which also handles sign-in. To read a link, Sangrah fetches the page directly or through a reader service (Jina Reader for articles, FxTwitter for posts on X). On Sangrah Pro, the text, or the screenshots, is then sent to Anthropic's Claude API to write the smart summary, key points, tags and quotes; under Anthropic's commercial terms, this data isn't used to train its models. Free saves aren't sent to Claude, and screenshots shared on the free plan are read on your iPhone: only the text leaves it."),
         Part(heading: "Who can see it",
              text: "Only you. Your saves, notes and quotes are locked to your account, and screenshots are stored privately. PDFs are kept at a long, unguessable link: anyone you share a PDF with can open it."),
+        Part(heading: "Subscriptions",
+             text: "Sangrah Pro is bought and billed through the App Store; Sangrah never sees your payment details. Sangrah stores which plan you're on, when it renews or ends, and the App Store's ID for your purchase, and checks your subscription's status with Apple."),
         Part(heading: "Connected accounts",
              text: "If you connect X or LinkedIn to publish posts, Sangrah stores the access tokens those services give it, and uses them only to post what you ask it to."),
         Part(heading: "What Sangrah doesn't do",

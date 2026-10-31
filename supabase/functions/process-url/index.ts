@@ -9,6 +9,8 @@ import { HOOK_MAX_CHARS, KEY_TAKEAWAY_COUNT, fitHook } from '../_shared/generati
 import { cleanArticleMarkdown, scribdPagesToText } from '../_shared/markdown.ts';
 import { QUOTE_MAX_CHARS, QUOTE_MAX_COUNT, verbatimQuotes } from '../_shared/quotes.ts';
 import { SCREENSHOT_BUCKET, screenshotPaths } from '../_shared/screenshots.ts';
+import { dailySaveLimitReached, proRequired, type LimitError, type Tier } from '../_shared/tiers.ts';
+import { claimUsage, loadTier, releaseUsage, type UsageClaim } from '../_shared/usage.ts';
 
 // Supabase Edge Runtime: keeps background work alive after the response is sent
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
@@ -23,7 +25,17 @@ interface ProcessURLRequest {
   categories?: string[];
   // Storage paths of screenshots shared from Photos, in order; sent instead of url
   screenshots?: string[];
+  // Screenshots read on the device (free accounts): the joined text and a title
+  screenshotText?: string;
+  title?: string;
+  // Pro: summarise one save that has no smart summary yet (documents.ai_waiting)
+  documentId?: string;
+  // Pro: summarise the newest saves without one (sent after upgrading)
+  resumeWaiting?: boolean;
 }
+
+// Waiting saves summarised per resumeWaiting request; the app asks again on its next launch
+const RESUME_BATCH = 10;
 
 interface ExtractedContent {
   title: string;
@@ -73,10 +85,27 @@ serve(async (req) => {
     }
 
     // Parse request
-    const { url, categories = [], screenshots }: ProcessURLRequest = await req.json();
+    const { url, categories = [], screenshots, screenshotText, title, documentId, resumeWaiting }: ProcessURLRequest =
+      await req.json();
+    const tier = await loadTier(supabase, user.id);
+
+    if (documentId !== undefined || resumeWaiting) {
+      if (tier === 'free') return limitResponse(proRequired('summary'));
+      return await summariseWaiting(supabase, user.id, documentId);
+    }
 
     if (screenshots !== undefined) {
+      if (tier === 'free') {
+        // Free accounts read screenshots on the device and send the text
+        // (screenshotText); remove what a stale plan or an older build uploaded
+        await removeScreenshots(supabase, user.id, screenshots);
+        return limitResponse(proRequired('screenshots'));
+      }
       return await saveScreenshots(supabase, user.id, screenshots, categories);
+    }
+
+    if (screenshotText !== undefined) {
+      return await saveScreenshotText(supabase, user.id, tier, screenshotText, title, categories);
     }
 
     if (!url) {
@@ -103,6 +132,10 @@ serve(async (req) => {
       );
     }
 
+    // Free accounts: FREE_SAVES_PER_DAY saves a day (a repeat of a saved link, above, doesn't count)
+    const daily = await claimDailySave(supabase, user.id, tier);
+    if (daily === 'limit') return limitResponse(dailySaveLimitReached());
+
     // Create initial document record
     const { data: document, error: insertError } = await supabase
       .from('documents')
@@ -120,11 +153,12 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
+      if (daily) await releaseUsage(supabase, daily);
       throw insertError;
     }
 
     // Process asynchronously; without waitUntil the runtime may kill this after responding
-    const processing = processContent(supabase, user.id, document.id, url, platform, categories.length === 0);
+    const processing = processContent(supabase, user.id, document.id, url, platform, tier, categories.length === 0);
     if (typeof EdgeRuntime !== 'undefined') {
       EdgeRuntime.waitUntil(processing);
     }
@@ -160,6 +194,7 @@ async function processContent(
   documentId: string,
   url: string,
   platform: string,
+  tier: Tier,
   autoCategorise: boolean
 ) {
   try {
@@ -191,24 +226,18 @@ async function processContent(
       })
       .eq('id', documentId);
 
-    // Generate AI enrichment, reusing the user's existing tags where they fit
-    const existingTags = await fetchRecentTagNames(supabase, userId);
-    const slideImages = await downloadImages(content.images ?? []);
-    const aiEnrichment = await generateAIEnrichment(content.title, content.bodyPlain, existingTags, slideImages);
-    // Slide text read from the images becomes part of the saved body
-    if (aiEnrichment.transcribedText) {
-      const combined = `${content.bodyPlain}\n\n${aiEnrichment.transcribedText}`.trim();
-      await supabase
-        .from('documents')
-        .update({
-          body_plain: combined,
-          word_count: combined.split(/\s+/).length,
-          reading_time_minutes: Math.ceil(combined.split(/\s+/).length / 200),
-        })
-        .eq('id', documentId);
+    // Free saves keep the clean text without a Claude call. Pro saves get the
+    // smart summary while this month's fair use lasts; after that they wait.
+    const claim = tier === 'pro' ? await claimSmartSave(supabase, userId) : null;
+    if (!claim) {
+      const metadata = content.metadata ?? {};
+      await markWaiting(supabase, documentId, {
+        metadata: content.images?.length ? { ...metadata, pendingImages: content.images } : metadata,
+      });
+      return;
     }
 
-    await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
+    await enrichStoredText(supabase, userId, documentId, content.title, content.bodyPlain, content.images ?? [], autoCategorise, claim);
 
   } catch (error) {
     console.error('Processing error:', error);
@@ -247,6 +276,7 @@ async function saveEnrichment(
       // (the user can still edit them).
       ...(autoCategorise ? { user_categories: aiEnrichment.categories } : {}),
       processing_status: 'completed',
+      ai_waiting: false,
       processed_at: new Date().toISOString(),
     })
     .eq('id', documentId);
@@ -254,7 +284,237 @@ async function saveEnrichment(
   await attachTags(supabase, userId, documentId, aiEnrichment.tags);
 }
 
+// MARK: Limits
+
+// 402 with a code the app turns into the paywall or a "limit reached" message
+function limitResponse(limit: LimitError): Response {
+  return new Response(
+    JSON.stringify({ error: limit.message, code: limit.code }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 402 }
+  );
+}
+
+// One of today's free saves. Null for Pro (saves aren't limited) and when the
+// check itself fails: a free save costs no Claude call, so it goes through.
+async function claimDailySave(supabase: any, userId: string, tier: Tier): Promise<UsageClaim | null | 'limit'> {
+  if (tier === 'pro') return null;
+  try {
+    return (await claimUsage(supabase, userId, 'save', tier)) ?? 'limit';
+  } catch (error) {
+    console.error('Daily save check failed:', error);
+    return null;
+  }
+}
+
+// One smart summary from this month's Pro fair use. Null when it's used up,
+// and also when the check itself fails: the save then waits rather than
+// running Claude unmetered.
+async function claimSmartSave(supabase: any, userId: string): Promise<UsageClaim | null> {
+  try {
+    return await claimUsage(supabase, userId, 'smart_save', 'pro');
+  } catch (error) {
+    console.error('Smart summary check failed:', error);
+    return null;
+  }
+}
+
+// Stored and shown in the Library, without a smart summary (free saves, and
+// Pro saves past the month's fair use)
+async function markWaiting(supabase: any, documentId: string, fields: Record<string, unknown> = {}) {
+  await supabase
+    .from('documents')
+    .update({ ...fields, processing_status: 'completed', ai_waiting: true })
+    .eq('id', documentId);
+}
+
+// Summarises a link save's stored text (plus any slide images) on the claim's
+// model. The claim is used up only if Claude answers: otherwise it is given
+// back, and a new save gets the plain-text summary it always got while a
+// resumed one goes back to waiting.
+async function enrichStoredText(
+  supabase: any,
+  userId: string,
+  documentId: string,
+  title: string,
+  body: string,
+  imageUrls: string[],
+  autoCategorise: boolean,
+  claim: UsageClaim,
+  resuming = false
+) {
+  let enriched: Enrichment | null = null;
+  try {
+    // Reuse the user's existing tags where they fit
+    const existingTags = await fetchRecentTagNames(supabase, userId);
+    const slideImages = await downloadImages(imageUrls);
+    enriched = await generateAIEnrichment(title, body, existingTags, slideImages);
+  } finally {
+    if (!enriched) await releaseUsage(supabase, claim);
+  }
+  if (!enriched && resuming) {
+    await markWaiting(supabase, documentId);
+    return;
+  }
+  const aiEnrichment = enriched ?? fallbackEnrichment(body);
+
+  // Slide text read from the images becomes part of the saved body
+  if (aiEnrichment.transcribedText) {
+    const combined = `${body}\n\n${aiEnrichment.transcribedText}`.trim();
+    await supabase
+      .from('documents')
+      .update({
+        body_plain: combined,
+        word_count: combined.split(/\s+/).length,
+        reading_time_minutes: Math.ceil(combined.split(/\s+/).length / 200),
+      })
+      .eq('id', documentId);
+  }
+
+  await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
+}
+
+// Pro: summarises saves that have no smart summary yet: one (Summarise on the
+// save) or the newest RESUME_BATCH (after upgrading). The stored text is used
+// as is, so a link that has since gone offline still gets its summary.
+async function summariseWaiting(supabase: any, userId: string, documentId: string | undefined): Promise<Response> {
+  let query = supabase
+    .from('documents')
+    .select('id, source_type, title, body_plain, metadata, user_categories')
+    .eq('user_id', userId)
+    .eq('ai_waiting', true);
+  query = documentId ? query.eq('id', documentId) : query.order('created_at', { ascending: false }).limit(RESUME_BATCH);
+  const { data: waiting, error } = await query;
+  if (error) throw error;
+
+  const started: string[] = [];
+  let limitReached = false;
+  for (const doc of waiting ?? []) {
+    // Readers can edit their own rows, metadata included, and the downloads
+    // below run with the service role: check stored paths and URLs again
+    // Screenshots read on the device have only text, summarised like a link's
+    const storedPaths = doc.source_type === 'screenshot' ? doc.metadata?.screenshotPaths : undefined;
+    const paths = storedPaths !== undefined ? screenshotPaths(storedPaths, userId) : null;
+    if (storedPaths !== undefined && !paths) {
+      console.log(`Waiting save ${doc.id} has invalid screenshot paths; skipped`);
+      continue;
+    }
+    const pendingImages = Array.isArray(doc.metadata?.pendingImages)
+      ? doc.metadata.pendingImages.filter((url: unknown): url is string => typeof url === 'string').slice(0, 10)
+      : [];
+
+    // Take the document first so two taps (or two devices) can't summarise it twice
+    const { data: taken } = await supabase
+      .from('documents')
+      .update({ ai_waiting: false })
+      .eq('id', doc.id)
+      .eq('ai_waiting', true)
+      .select('id');
+    if (!taken?.length) continue;
+
+    const claim = await claimSmartSave(supabase, userId);
+    if (!claim) {
+      await markWaiting(supabase, doc.id);
+      limitReached = true;
+      break;
+    }
+
+    const autoCategorise = (doc.user_categories ?? []).length === 0;
+    const work = paths
+      ? processScreenshots(supabase, userId, doc.id, paths, autoCategorise, claim)
+      : enrichStoredText(supabase, userId, doc.id, doc.title, doc.body_plain, pendingImages, autoCategorise, claim, true)
+          .catch(async (e) => {
+            console.error('Summarising a waiting save failed:', e);
+            await markWaiting(supabase, doc.id);
+          });
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(work);
+    }
+    started.push(doc.id);
+  }
+
+  if (documentId && limitReached) {
+    return new Response(
+      JSON.stringify({ error: "You've used this month's smart summaries. More next month.", code: 'monthly_limit_reached' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 402 }
+    );
+  }
+  return new Response(
+    JSON.stringify({ started, limitReached }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+  );
+}
+
 // MARK: Screenshots
+
+// Free accounts: screenshots read on the device. The Share Extension sends
+// the text, joined in order (Shared/ScreenshotText.swift); nothing is uploaded
+// and Claude isn't called. A Pro account sending text gets the smart summary.
+async function saveScreenshotText(
+  supabase: any,
+  userId: string,
+  tier: Tier,
+  text: unknown,
+  title: unknown,
+  categories: string[]
+): Promise<Response> {
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new Error('No text was found in the screenshots');
+  }
+  const body = text.trim().substring(0, 100_000);
+  const heading = typeof title === 'string' && title.trim() ? title.trim().substring(0, 200) : 'Saved screenshots';
+  const words = body.split(/\s+/).length;
+
+  const daily = await claimDailySave(supabase, userId, tier);
+  if (daily === 'limit') return limitResponse(dailySaveLimitReached());
+
+  const { data: document, error: insertError } = await supabase
+    .from('documents')
+    .insert({
+      user_id: userId,
+      source_type: 'screenshot',
+      title: heading,
+      body_plain: body,
+      word_count: words,
+      reading_time_minutes: Math.ceil(words / 200),
+      user_categories: categories,
+      metadata: { textRecognition: 'on-device' },
+      processing_status: tier === 'pro' ? 'enriching' : 'completed',
+      ai_waiting: tier === 'free',
+    })
+    .select()
+    .single();
+  if (insertError) {
+    if (daily) await releaseUsage(supabase, daily);
+    throw insertError;
+  }
+
+  if (tier === 'pro') {
+    const work = (async () => {
+      const claim = await claimSmartSave(supabase, userId);
+      if (!claim) return markWaiting(supabase, document.id);
+      await enrichStoredText(supabase, userId, document.id, heading, body, [], categories.length === 0, claim);
+    })().catch(async (e) => {
+      console.error('Summarising screenshot text failed:', e);
+      await markWaiting(supabase, document.id);
+    });
+    if (typeof EdgeRuntime !== 'undefined') {
+      EdgeRuntime.waitUntil(work);
+    }
+  }
+
+  return new Response(
+    JSON.stringify({ id: document.id, status: tier === 'pro' ? 'processing' : 'completed', message: 'Screenshots saved' }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+  );
+}
+
+// Deletes uploaded screenshots that won't be read (paths checked: the caller's folder only)
+async function removeScreenshots(supabase: any, userId: string, input: unknown) {
+  const paths = screenshotPaths(input, userId);
+  if (!paths) return;
+  const { error } = await supabase.storage.from(SCREENSHOT_BUCKET).remove(paths);
+  if (error) console.error('Removing unread screenshots failed:', error);
+}
 
 // A save made of screenshots (e.g. five screenshots of one article): the
 // images are read together, in order, into one article
@@ -298,21 +558,41 @@ async function processScreenshots(
   userId: string,
   documentId: string,
   paths: string[],
-  autoCategorise: boolean
+  autoCategorise: boolean,
+  // Set when summarising a waiting save: the credit is already taken and the
+  // save stays visible (completed) while it is read
+  resumeClaim?: UsageClaim
 ) {
+  let claim: UsageClaim | null = resumeClaim ?? null;
   try {
-    await supabase
-      .from('documents')
-      .update({ processing_status: 'extracting' })
-      .eq('id', documentId);
+    if (!claim) {
+      claim = await claimSmartSave(supabase, userId);
+      if (!claim) {
+        // The screenshots stay in storage until a credit is free
+        await markWaiting(supabase, documentId, { title: 'Saved screenshots' });
+        return;
+      }
+      await supabase
+        .from('documents')
+        .update({ processing_status: 'extracting' })
+        .eq('id', documentId);
+    }
 
-    const images = await downloadScreenshots(supabase, paths);
+    const images = await downloadScreenshots(supabase, userId, paths);
     if (images.length === 0) {
       throw new Error('The screenshots could not be read');
     }
 
     const existingTags = await fetchRecentTagNames(supabase, userId);
     const aiEnrichment = await generateAIEnrichment('', '', existingTags, images, 'screenshots');
+    if (!aiEnrichment) {
+      // Claude didn't answer: keep the save and its credit for another try
+      await releaseUsage(supabase, claim);
+      claim = null;
+      await markWaiting(supabase, documentId, { title: 'Saved screenshots' });
+      return;
+    }
+    claim = null;
     const body = aiEnrichment.transcribedText ?? '';
     if (!body) {
       throw new Error('No text was found in the screenshots');
@@ -328,13 +608,14 @@ async function processScreenshots(
         body_plain: body,
         word_count: words,
         reading_time_minutes: Math.ceil(words / 200),
-        processing_status: 'enriching',
+        ...(resumeClaim ? {} : { processing_status: 'enriching' }),
       })
       .eq('id', documentId);
 
     await saveEnrichment(supabase, userId, documentId, aiEnrichment, autoCategorise);
   } catch (error) {
     console.error('Screenshot processing error:', error);
+    if (claim) await releaseUsage(supabase, claim);
     await supabase
       .from('documents')
       .update({
@@ -346,8 +627,12 @@ async function processScreenshots(
   }
 }
 
-// Paths were checked by screenshotPaths: the caller's folder only
-async function downloadScreenshots(supabase: any, paths: string[]): Promise<ImageInput[]> {
+// Paths were checked by screenshotPaths: the caller's folder only. Checked
+// again here, since this reads storage with the service role.
+async function downloadScreenshots(supabase: any, userId: string, paths: string[]): Promise<ImageInput[]> {
+  if (!screenshotPaths(paths, userId)) {
+    throw new Error('Invalid screenshots');
+  }
   const images: ImageInput[] = [];
   for (const path of paths) {
     const { data, error } = await supabase.storage.from(SCREENSHOT_BUCKET).download(path);
@@ -1007,18 +1292,20 @@ function imageInstructions(images: ImageInput[], kind: ImageKind): string {
 Base everything below on the transcribed text.`;
 }
 
+// The smart summary (Pro). Null when Claude can't be reached or fails, so the
+// caller can give the credit back
 async function generateAIEnrichment(
   title: string,
   content: string,
   existingTags: string[],
   images: ImageInput[] = [],
   kind: ImageKind = 'slides'
-): Promise<Enrichment> {
+): Promise<Enrichment | null> {
   const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
 
   if (!anthropicApiKey) {
     console.log('Anthropic API key not configured, skipping AI enrichment');
-    return fallbackEnrichment(content);
+    return null;
   }
 
   try {
@@ -1071,6 +1358,6 @@ Write in the language of the content.`,
     };
   } catch (e) {
     console.error('AI enrichment failed:', e);
-    return fallbackEnrichment(content);
+    return null;
   }
 }

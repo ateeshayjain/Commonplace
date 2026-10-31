@@ -15,6 +15,10 @@ class DocumentDetailViewModel: ObservableObject {
     @Published var sharedFile: SharedFile?
     /// A file ready to open in the in-app PDF reader.
     @Published var viewedFile: SharedFile?
+    /// Summarising a save that has no smart summary yet (Pro)
+    @Published var isSummarising = false
+    /// Set when Summarise was refused (not Pro, or the month is used up), to show the paywall
+    @Published var needsUpgrade = false
 
     struct SharedFile: Identifiable {
         let url: URL
@@ -42,6 +46,51 @@ class DocumentDetailViewModel: ObservableObject {
         } catch {
             // Tags are supplementary; don't surface the error over the document
             tags = []
+        }
+    }
+
+    // MARK: - Summarise
+
+    /// Pro: writes the smart summary for a save that has none, then waits
+    /// for it (about as long as a new save takes)
+    func summarise() async {
+        guard document.isWaitingForSummary, !isSummarising else { return }
+        isSummarising = true
+        defer { isSummarising = false }
+
+        do {
+            _ = try await documentService.summariseWaitingSave(document.id)
+        } catch let refusal as SupabaseError where refusal.refusalCode == "pro_required" {
+            await SubscriptionService.shared.refreshUsage()
+            needsUpgrade = true
+            return
+        } catch {
+            self.error = error
+            HapticManager.error()
+            return
+        }
+        await SubscriptionService.shared.refreshUsage()
+
+        let deadline = Date().addingTimeInterval(120)
+        while Date() < deadline {
+            try? await Task.sleep(for: .seconds(2))
+            guard let updated = try? await documentService.fetchDocument(id: document.id) else { continue }
+            if updated.processingStatus == .failed {
+                error = DocumentProcessingError(message: updated.processingError ?? "We couldn't summarise this save.")
+                return
+            }
+            // Back to waiting means Claude didn't answer; the credit was given back
+            if updated.processingStatus == .completed, updated.aiSummaryShort != nil || updated.isWaitingForSummary {
+                document = updated
+                NotificationCenter.default.post(name: .documentUpdated, object: updated)
+                await loadTags()
+                if updated.isWaitingForSummary {
+                    error = DocumentProcessingError(message: "We couldn't summarise this save right now. Try again in a little while.")
+                } else {
+                    HapticManager.saveSuccess()
+                }
+                return
+            }
         }
     }
 

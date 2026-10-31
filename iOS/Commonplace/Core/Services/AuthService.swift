@@ -212,6 +212,7 @@ class AuthService: NSObject, ObservableObject {
         isAuthenticated = false
         SharedAuthStore.clear()
         SavedQuoteService.shared.reset()
+        SubscriptionService.shared.reset()
         WidgetQuoteSync.shared.clear()
     }
 

@@ -18,6 +18,8 @@ struct DocumentDetailView: View {
     @State private var showingQuoteTooLong = false
     @State private var quoteSavedToast = false
     @ObservedObject private var savedQuotes = SavedQuoteService.shared
+    @ObservedObject private var subscriptions = SubscriptionService.shared
+    @State private var showingPaywall = false
     @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
@@ -49,13 +51,18 @@ struct DocumentDetailView: View {
                     quotesSection(quotes)
                 }
 
+                // No smart summary: a free save, or Pro past the month's fair use
+                if viewModel.document.isWaitingForSummary {
+                    smartSummarySection
+                }
+
                 // AI Summary
-                if let summary = document.aiSummaryShort {
+                if let summary = viewModel.document.aiSummaryShort {
                     summarySection(summary)
                 }
 
                 // Key Points
-                if let keyPoints = document.aiKeyPoints, !keyPoints.isEmpty {
+                if let keyPoints = viewModel.document.aiKeyPoints, !keyPoints.isEmpty {
                     keyPointsSection(keyPoints)
                 }
 
@@ -67,7 +74,7 @@ struct DocumentDetailView: View {
                 // Content preview, then the PDF. Every save gets both: the PDF is
                 // made on first open, so a stored pdfUrl only means it was opened
                 // or shared before
-                if !document.bodyPlain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !viewModel.document.bodyPlain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     contentPreviewSection(proxy: proxy)
                         .id(Self.contentAnchor)
                 }
@@ -160,6 +167,9 @@ struct DocumentDetailView: View {
         }
         .sheet(isPresented: $showingCampaign) {
             CampaignView(document: document)
+        }
+        .sheet(isPresented: $showingPaywall) {
+            PaywallView(reason: .summary)
         }
         .task {
             await viewModel.loadTags()
@@ -452,6 +462,58 @@ struct DocumentDetailView: View {
                 ForEach(tags) { tag in
                     CPTagChip(name: tag.name)
                 }
+            }
+        }
+    }
+
+    /// In place of the AI sections on a save without a smart summary: what
+    /// Pro adds (free accounts), or Summarise (Pro)
+    private var smartSummarySection: some View {
+        let plan = subscriptions.plan
+        let isPro = plan?.isPro == true
+        let monthUsedUp = isPro && plan?.smartSummaries.remaining == 0
+        return CPCard {
+            VStack(alignment: .leading, spacing: CPSpacing.sm) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.cpTint)
+                    Text("Smart summary")
+                        .sectionHeaderStyle()
+                    if !isPro {
+                        Spacer()
+                        Text("PRO")
+                            .font(.cpCaption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.cpTint)
+                    }
+                }
+
+                Group {
+                    if !isPro {
+                        Text(ProCopy.smartSummary)
+                    } else if monthUsedUp, let plan {
+                        Text("You've used this month's \(plan.smartSummaries.limit ?? 0) smart summaries. This save gets its summary from \(PlanSummary.dayMonth(plan.smartSummaries.resetsAt, calendar: .current)).")
+                    } else {
+                        Text("This save doesn't have its smart summary yet.")
+                    }
+                }
+                .font(.cpCallout)
+                .foregroundColor(.cpTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                if !isPro {
+                    CPButton("Upgrade to Pro", size: .medium, icon: "sparkles") { showingPaywall = true }
+                } else if !monthUsedUp {
+                    CPButton("Summarise Now", size: .medium, isLoading: viewModel.isSummarising, icon: "sparkles") {
+                        Task { await viewModel.summarise() }
+                    }
+                }
+            }
+        }
+        .onChange(of: viewModel.needsUpgrade) { _, needed in
+            if needed {
+                showingPaywall = true
+                viewModel.needsUpgrade = false
             }
         }
     }

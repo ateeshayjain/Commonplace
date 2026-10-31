@@ -69,6 +69,10 @@ struct Document: Identifiable, Codable, Hashable {
     // Processing Status
     var processingStatus: ProcessingStatus
     let processingError: String?
+    /// Saved past the free month's AI credits: the text is here, the summary
+    /// comes when the reader taps Summarise (or upgrades). Nil on rows from
+    /// before migration 010 and in demo data.
+    var aiWaiting: Bool?
 
     // Timestamps
     let createdAt: Date
@@ -124,10 +128,15 @@ struct Document: Identifiable, Codable, Hashable {
         case lastReadAt = "last_read_at"
         case processingStatus = "processing_status"
         case processingError = "processing_error"
+        case aiWaiting = "ai_waiting"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case processedAt = "processed_at"
     }
+}
+
+extension Document {
+    var isWaitingForSummary: Bool { aiWaiting == true }
 }
 
 // MARK: - Supporting Types
