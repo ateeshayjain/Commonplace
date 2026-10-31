@@ -72,7 +72,7 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (th
 | Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | **Live.** Migrations 001–009 applied; 010 (tiers) written, not applied. Edge Functions deployed: `process-url` v16 (saves on Sonnet 5.5 since 30 Oct 2026), `generate-pdf` v10, `delete-account` v1, plus `synthesize-content`, `generate-posts`, `analyze-style`, `oauth-connect`. Not deployed yet: tier changes to `process-url` and `synthesize-content`, new `verify-purchase` and `app-store-notifications` |
 | iOS app | **On TestFlight**, build 27 (2026-10-30), App Store Connect record "Sangrah: Commonplace Book" |
 | `ANTHROPIC_API_KEY` secret | Set; enrichment runs on real saves |
-| Tests / CI | CI builds the app, runs 39 iOS unit tests (`CommonplaceTests`; 3 StoreKit tests skip in CI: the products test needs the app run from Xcode first, the purchase tests are opt-in), type-checks every Edge Function and runs 54 Deno tests. No UI tests |
+| Tests / CI | CI builds the app, runs 46 iOS unit tests (`CommonplaceTests`; 3 more StoreKit tests skip in CI: the products test needs the app run from Xcode first, the purchase tests are opt-in), type-checks every Edge Function and runs 54 Deno tests. No UI tests |
 | App Store subscriptions | Not set up: Paid Apps agreement, "Sangrah Pro" group, In-App Purchase key, server notification URL (steps in [`docs/subscriptions.md`](docs/subscriptions.md) §3) |
 
 ### Known issues and tech debt

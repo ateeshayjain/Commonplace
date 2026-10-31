@@ -5,6 +5,7 @@ struct DocumentDetailView: View {
     let document: Document
 
     @StateObject private var viewModel: DocumentDetailViewModel
+    @ObservedObject private var speech = SpeechService.shared
     @State private var showingCategorySheet = false
     @State private var showingNotes = false
     @State private var showingTitleEditor = false
@@ -42,6 +43,7 @@ struct DocumentDetailView: View {
                 // Author & metadata
                 authorSection
                 sourceLinkSection
+                listenSection
 
                 // Hook and the author's own lines, each shareable as a Sangrah card
                 let quotes = ShareableQuote.all(for: viewModel.document)
@@ -279,6 +281,40 @@ struct DocumentDetailView: View {
                 .cornerRadius(CPSpacing.cornerRadiusMedium)
             }
         }
+    }
+
+    /// Read the save aloud with Apple's on-device voice; tapping again pauses
+    private var listenSection: some View {
+        let isThis = speech.isCurrent(viewModel.document)
+        let playing = isThis && speech.isPlaying
+        let minutes = SpeechService.listeningMinutes(for: viewModel.document, speed: speech.speed)
+
+        return HStack(spacing: CPSpacing.sm) {
+            Button {
+                speech.toggle(viewModel.document)
+            } label: {
+                HStack(spacing: CPSpacing.xs) {
+                    Image(systemName: playing ? "pause.fill" : "headphones")
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: 20)
+                    Text(playing ? "Pause" : (isThis ? "Resume Listening" : "Listen"))
+                        .fontWeight(.semibold)
+                    if !isThis {
+                        Text("\u{00B7} \(minutes) min")
+                            .foregroundColor(.cpTextSecondary)
+                    }
+                    Spacer()
+                }
+            }
+            .accessibilityLabel(playing ? "Pause listening" : "Listen to this article")
+            SpeedMenu()
+        }
+        .font(.cpSubhead)
+        .foregroundColor(.cpTint)
+        .padding(.horizontal, CPSpacing.md)
+        .padding(.vertical, CPSpacing.sm)
+        .background(Color.cpBackgroundSecondary)
+        .cornerRadius(CPSpacing.cornerRadiusMedium)
     }
 
     /// Swipeable cards, one quote each, with page dots like an Instagram carousel

@@ -72,12 +72,16 @@
 		A1000081 /* WidgetQuoteStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000081 /* WidgetQuoteStoreTests.swift */; };
 		A1000082 /* CategorySlugTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000082 /* CategorySlugTests.swift */; };
 		A1000083 /* WeeklySummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000083 /* WeeklySummaryTests.swift */; };
-		A1000090 /* Plan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000090 /* Plan.swift */; };
-		A1000091 /* SubscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000091 /* SubscriptionService.swift */; };
-		A1000092 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000092 /* PaywallView.swift */; };
-		A1000093 /* PlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000093 /* PlanTests.swift */; };
-		A1000095 /* SubscriptionStoreKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000095 /* SubscriptionStoreKitTests.swift */; };
+		A10000B0 /* Plan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B0 /* Plan.swift */; };
+		A10000B1 /* SubscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B1 /* SubscriptionService.swift */; };
+		A10000B2 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B2 /* PaywallView.swift */; };
+		A10000B3 /* PlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B3 /* PlanTests.swift */; };
+		A10000B5 /* SubscriptionStoreKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B5 /* SubscriptionStoreKitTests.swift */; };
 		A1000084 /* SupportContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000084 /* SupportContactTests.swift */; };
+		A1000090 /* SpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000090 /* SpeechService.swift */; };
+		A1000091 /* NowPlayingBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000091 /* NowPlayingBar.swift */; };
+		A1000092 /* VoicePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000092 /* VoicePickerView.swift */; };
+		A1000093 /* SpeechTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000093 /* SpeechTextTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -188,14 +192,18 @@
 		B1000081 /* WidgetQuoteStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetQuoteStoreTests.swift; sourceTree = "<group>"; };
 		B1000082 /* CategorySlugTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySlugTests.swift; sourceTree = "<group>"; };
 		B1000083 /* WeeklySummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklySummaryTests.swift; sourceTree = "<group>"; };
-		B1000090 /* Plan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Plan.swift; sourceTree = "<group>"; };
-		B1000091 /* SubscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionService.swift; sourceTree = "<group>"; };
-		B1000092 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
-		B1000093 /* PlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanTests.swift; sourceTree = "<group>"; };
-		B1000094 /* Sangrah.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Sangrah.storekit; sourceTree = "<group>"; };
-		B1000095 /* SubscriptionStoreKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStoreKitTests.swift; sourceTree = "<group>"; };
+		B10000B0 /* Plan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Plan.swift; sourceTree = "<group>"; };
+		B10000B1 /* SubscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionService.swift; sourceTree = "<group>"; };
+		B10000B2 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		B10000B3 /* PlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanTests.swift; sourceTree = "<group>"; };
+		B10000B4 /* Sangrah.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Sangrah.storekit; sourceTree = "<group>"; };
+		B10000B5 /* SubscriptionStoreKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStoreKitTests.swift; sourceTree = "<group>"; };
 		B1000084 /* SupportContactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportContactTests.swift; sourceTree = "<group>"; };
 		C1000004 /* CommonplaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CommonplaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1000090 /* SpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
+		B1000091 /* NowPlayingBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingBar.swift; sourceTree = "<group>"; };
+		B1000092 /* VoicePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePickerView.swift; sourceTree = "<group>"; };
+		B1000093 /* SpeechTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechTextTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -256,7 +264,7 @@
 				E1000060 /* SangrahWidget */,
 				E1000061 /* Shared */,
 				E1000070 /* CommonplaceTests */,
-				B1000094 /* Sangrah.storekit */,
+				B10000B4 /* Sangrah.storekit */,
 				E1000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -313,6 +321,7 @@
 				E1000013 /* Library */,
 				E1000014 /* Detail */,
 				E1000051 /* Quotes */,
+				E1000080 /* Listen */,
 				E1000016 /* Profile */,
 				E1000017 /* Onboarding */,
 				309324102F307D6B00E2DF1F /* Campaigns */,
@@ -360,7 +369,7 @@
 				B1000041 /* Tag.swift */,
 				B1000063 /* SavedQuote.swift */,
 				B1000042 /* DocumentCollection.swift */,
-				B1000090 /* Plan.swift */,
+				B10000B0 /* Plan.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -376,7 +385,8 @@
 				B1000064 /* SavedQuoteService.swift */,
 				B1000068 /* CategoryService.swift */,
 				B1000075 /* WidgetQuoteSync.swift */,
-				B1000091 /* SubscriptionService.swift */,
+				B1000090 /* SpeechService.swift */,
+				B10000B1 /* SubscriptionService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -423,7 +433,7 @@
 			isa = PBXGroup;
 			children = (
 				B1000020 /* ProfileView.swift */,
-				B1000092 /* PaywallView.swift */,
+				B10000B2 /* PaywallView.swift */,
 				B1000067 /* SupportViews.swift */,
 			);
 			path = Profile;
@@ -505,11 +515,21 @@
 				B1000081 /* WidgetQuoteStoreTests.swift */,
 				B1000082 /* CategorySlugTests.swift */,
 				B1000083 /* WeeklySummaryTests.swift */,
-				B1000093 /* PlanTests.swift */,
-				B1000095 /* SubscriptionStoreKitTests.swift */,
+				B10000B3 /* PlanTests.swift */,
+				B10000B5 /* SubscriptionStoreKitTests.swift */,
 				B1000084 /* SupportContactTests.swift */,
+				B1000093 /* SpeechTextTests.swift */,
 			);
 			path = CommonplaceTests;
+			sourceTree = "<group>";
+		};
+		E1000080 /* Listen */ = {
+			isa = PBXGroup;
+			children = (
+				B1000091 /* NowPlayingBar.swift */,
+				B1000092 /* VoicePickerView.swift */,
+			);
+			path = Listen;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -696,9 +716,9 @@
 				309324142F307DBD00E2DF1F /* CampaignService.swift in Sources */,
 				A1000020 /* ProfileView.swift in Sources */,
 				A1000067 /* SupportViews.swift in Sources */,
-				A1000090 /* Plan.swift in Sources */,
-				A1000091 /* SubscriptionService.swift in Sources */,
-				A1000092 /* PaywallView.swift in Sources */,
+				A10000B0 /* Plan.swift in Sources */,
+				A10000B1 /* SubscriptionService.swift in Sources */,
+				A10000B2 /* PaywallView.swift in Sources */,
 				A1000021 /* OnboardingView.swift in Sources */,
 				A1000022 /* AuthView.swift in Sources */,
 				A1000023 /* Colors.swift in Sources */,
@@ -721,6 +741,9 @@
 				A1000072 /* WidgetQuote.swift in Sources */,
 				A1000073 /* BrandColors.swift in Sources */,
 				A1000075 /* WidgetQuoteSync.swift in Sources */,
+				A1000090 /* SpeechService.swift in Sources */,
+				A1000091 /* NowPlayingBar.swift in Sources */,
+				A1000092 /* VoicePickerView.swift in Sources */,
 				A1000068 /* CategoryService.swift in Sources */,
 				A1000063 /* SavedQuote.swift in Sources */,
 				A1000061 /* QuoteCard.swift in Sources */,
@@ -756,9 +779,10 @@
 				A1000081 /* WidgetQuoteStoreTests.swift in Sources */,
 				A1000082 /* CategorySlugTests.swift in Sources */,
 				A1000083 /* WeeklySummaryTests.swift in Sources */,
-				A1000093 /* PlanTests.swift in Sources */,
-				A1000095 /* SubscriptionStoreKitTests.swift in Sources */,
+				A10000B3 /* PlanTests.swift in Sources */,
+				A10000B5 /* SubscriptionStoreKitTests.swift in Sources */,
 				A1000084 /* SupportContactTests.swift in Sources */,
+				A1000093 /* SpeechTextTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -909,7 +933,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -938,7 +962,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Commonplace/Commonplace.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Commonplace/Info.plist;
@@ -965,7 +989,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;
@@ -989,7 +1013,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CommonplaceShareExtension/CommonplaceShareExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CommonplaceShareExtension/Info.plist;
@@ -1013,7 +1037,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = SangrahWidget/SangrahWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SangrahWidget/Info.plist;
@@ -1037,7 +1061,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = SangrahWidget/SangrahWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SangrahWidget/Info.plist;
@@ -1061,7 +1085,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
@@ -1079,7 +1103,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 28;
 				DEVELOPMENT_TEAM = 3M5BRKQ345;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
