@@ -51,9 +51,9 @@ struct DocumentDetailView: View {
                     quotesSection(quotes)
                 }
 
-                // Saved past the free month's AI credits: the text is below, the summary to come
+                // No smart summary: a free save, or Pro past the month's fair use
                 if viewModel.document.isWaitingForSummary {
-                    waitingSection
+                    smartSummarySection
                 }
 
                 // AI Summary
@@ -169,7 +169,7 @@ struct DocumentDetailView: View {
             CampaignView(document: document)
         }
         .sheet(isPresented: $showingPaywall) {
-            PaywallView(reason: .saves)
+            PaywallView(reason: .summary)
         }
         .task {
             await viewModel.loadTags()
@@ -466,34 +466,44 @@ struct DocumentDetailView: View {
         }
     }
 
-    private var waitingSection: some View {
+    /// In place of the AI sections on a save without a smart summary: what
+    /// Pro adds (free accounts), or Summarise (Pro)
+    private var smartSummarySection: some View {
         let plan = subscriptions.plan
-        let outOfCredits = plan?.savesRemaining == 0
+        let isPro = plan?.isPro == true
+        let monthUsedUp = isPro && plan?.smartSummaries.remaining == 0
         return CPCard {
             VStack(alignment: .leading, spacing: CPSpacing.sm) {
                 HStack {
-                    Image(systemName: "hourglass")
+                    Image(systemName: "sparkles")
                         .foregroundColor(.cpTint)
-                    Text("Waiting for a summary")
+                    Text("Smart summary")
                         .sectionHeaderStyle()
+                    if !isPro {
+                        Spacer()
+                        Text("PRO")
+                            .font(.cpCaption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.cpTint)
+                    }
                 }
 
                 Group {
-                    if outOfCredits, let plan {
-                        Text("You've used this month's \(plan.saves.limit ?? 0) free AI saves, so this one is kept without a summary. Summarise it after \(PlanSummary.dayMonth(plan.periodEnds, calendar: .current)), or go Pro for unlimited.")
-                    } else if let remaining = plan?.savesRemaining {
-                        Text("Saved without a summary. You have \(remaining) AI \(remaining == 1 ? "save" : "saves") left this month.")
+                    if !isPro {
+                        Text(ProCopy.smartSummary)
+                    } else if monthUsedUp, let plan {
+                        Text("You've used this month's \(plan.smartSummaries.limit ?? 0) smart summaries. This save gets its summary from \(PlanSummary.dayMonth(plan.smartSummaries.resetsAt, calendar: .current)).")
                     } else {
-                        Text("Saved without a summary yet.")
+                        Text("This save doesn't have its smart summary yet.")
                     }
                 }
                 .font(.cpCallout)
                 .foregroundColor(.cpTextSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-                if outOfCredits {
-                    CPButton("Go Pro", size: .medium, icon: "sparkles") { showingPaywall = true }
-                } else {
+                if !isPro {
+                    CPButton("Upgrade to Pro", size: .medium, icon: "sparkles") { showingPaywall = true }
+                } else if !monthUsedUp {
                     CPButton("Summarise Now", size: .medium, isLoading: viewModel.isSummarising, icon: "sparkles") {
                         Task { await viewModel.summarise() }
                     }

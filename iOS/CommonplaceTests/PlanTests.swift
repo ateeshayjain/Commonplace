@@ -12,17 +12,18 @@ final class PlanTests: XCTestCase {
 
     private func plan(
         tier: PlanSummary.Tier = .free,
-        used: Int = 0,
-        limit: Int? = 20,
+        savesToday: Int = 0,
+        smartUsed: Int = 0,
         trialEndsAt: Date? = nil,
         expiresAt: Date? = nil,
         autoRenews: Bool? = nil
     ) -> PlanSummary {
-        PlanSummary(
+        let isPro = tier == .pro
+        return PlanSummary(
             tier: tier, expiresAt: expiresAt, trialEndsAt: trialEndsAt, autoRenews: autoRenews,
-            periodEnds: date("2026-11-01T00:00:00Z"),
-            saves: .init(used: used, limit: limit),
-            compose: .init(used: 3, limit: tier == .pro ? 10 : 0)
+            saves: .init(used: savesToday, limit: isPro ? nil : 5, resetsAt: date("2026-10-31T00:00:00Z")),
+            smartSummaries: .init(used: smartUsed, limit: isPro ? 300 : 0, resetsAt: date("2026-11-01T00:00:00Z")),
+            compose: .init(used: 3, limit: isPro ? 10 : 0, resetsAt: date("2026-11-01T00:00:00Z"))
         )
     }
 
@@ -32,51 +33,67 @@ final class PlanTests: XCTestCase {
 
     // MARK: - Decoding
 
-    func testDecodesVerifyPurchaseResponseWithFractionalSeconds() throws {
+    func testDecodesAProPlanWithFractionalSeconds() throws {
         let json = """
-        {"tier":"pro","expiresAt":"2026-11-29T10:15:00.000Z","trialEndsAt":"2026-11-29T10:15:00.000Z",
-         "autoRenews":true,"periodEnds":"2026-11-01T00:00:00.000Z",
-         "saves":{"used":42,"limit":null},"compose":{"used":2,"limit":10}}
+        {"tier":"pro","expiresAt":"2026-11-29T10:15:00.000Z","trialEndsAt":"2026-11-29T10:15:00.000Z","autoRenews":true,
+         "saves":{"used":12,"limit":null,"resetsAt":"2026-10-31T00:00:00.000Z"},
+         "smartSummaries":{"used":42,"limit":300,"resetsAt":"2026-11-01T00:00:00.000Z"},
+         "compose":{"used":2,"limit":10,"resetsAt":"2026-11-01T00:00:00.000Z"}}
         """
         let plan = try SupabaseService.flexibleDateDecoder().decode(PlanSummary.self, from: Data(json.utf8))
         XCTAssertTrue(plan.isPro)
         XCTAssertEqual(plan.trialEndsAt, date("2026-11-29T10:15:00Z"))
-        XCTAssertNil(plan.saves.limit)
-        XCTAssertNil(plan.savesRemaining)
+        XCTAssertNil(plan.saves.remaining)
+        XCTAssertEqual(plan.smartSummaries.remaining, 258)
         XCTAssertEqual(plan.composeRemaining, 8)
     }
 
-    func testDecodesFreePlanWithNulls() throws {
+    func testDecodesAFreePlanWithNulls() throws {
         let json = """
-        {"tier":"free","expiresAt":null,"trialEndsAt":null,"autoRenews":null,"periodEnds":"2026-11-01T00:00:00.000Z",
-         "saves":{"used":3,"limit":20},"compose":{"used":0,"limit":0}}
+        {"tier":"free","expiresAt":null,"trialEndsAt":null,"autoRenews":null,
+         "saves":{"used":2,"limit":5,"resetsAt":"2026-10-31T00:00:00.000Z"},
+         "smartSummaries":{"used":0,"limit":0,"resetsAt":"2026-11-01T00:00:00.000Z"},
+         "compose":{"used":0,"limit":0,"resetsAt":"2026-11-01T00:00:00.000Z"}}
         """
         let plan = try SupabaseService.flexibleDateDecoder().decode(PlanSummary.self, from: Data(json.utf8))
         XCTAssertFalse(plan.isPro)
-        XCTAssertEqual(plan.savesRemaining, 17)
+        XCTAssertEqual(plan.saves.remaining, 3)
         XCTAssertEqual(plan.composeRemaining, 0)
     }
 
-    // MARK: - Save counter
+    // MARK: - Plan card
 
-    func testSavesLeftText() {
-        XCTAssertEqual(plan(used: 3).savesLeftText, "17 of 20 saves left this month")
-        XCTAssertEqual(plan(used: 19).savesLeftText, "1 of 20 saves left this month")
-        XCTAssertEqual(plan(used: 20).savesLeftText, "No AI saves left this month")
-        XCTAssertEqual(plan(tier: .pro, used: 400, limit: nil).savesLeftText, "Unlimited AI saves")
+    func testFreePlanCardCountsTodaysSaves() {
+        XCTAssertEqual(plan(savesToday: 2).planCardText, "Free: 3 of 5 saves left today")
+        XCTAssertEqual(plan(savesToday: 4).planCardText, "Free: 1 of 5 saves left today")
+        XCTAssertEqual(plan(savesToday: 5).planCardText, "Free: no saves left today")
+        // A save that raced the limit never shows a negative count
+        XCTAssertEqual(plan(savesToday: 7).saves.remaining, 0)
+        XCTAssertEqual(plan(tier: .pro).planCardText, "Sangrah Pro: unlimited saves with smart summaries")
     }
 
-    func testRemainingNeverGoesNegative() {
-        // A save that raced the limit, or a limit lowered mid-month
-        XCTAssertEqual(plan(used: 23).savesRemaining, 0)
-    }
-
-    func testFootnoteOnlyWhenOutOfSaves() {
-        XCTAssertNil(plan(used: 5).savesFootnote(calendar: utc))
+    func testFootnoteWhenTheDayOrMonthIsUsedUp() {
+        XCTAssertNil(plan(savesToday: 3).usageFootnote(calendar: utc))
         XCTAssertEqual(
-            plan(used: 20).savesFootnote(calendar: utc),
-            "New saves are kept and wait for a summary. More AI saves on 1 Nov."
+            plan(savesToday: 5).usageFootnote(calendar: utc),
+            "You can save again from 12:00 am tomorrow, or go Pro for unlimited saves."
         )
+        XCTAssertNil(plan(tier: .pro, smartUsed: 120).usageFootnote(calendar: utc))
+        XCTAssertEqual(
+            plan(tier: .pro, smartUsed: 300).usageFootnote(calendar: utc),
+            "New saves are kept and get their smart summary from 1 Nov."
+        )
+    }
+
+    func testProShowsTheMonthsSmartSummaries() {
+        XCTAssertEqual(plan(tier: .pro, smartUsed: 120).smartSummariesText, "120 of 300 smart summaries this month")
+        XCTAssertNil(plan().smartSummariesText)
+    }
+
+    func testWhyItCostsNamesClaudeAndWhatStaysFree() {
+        XCTAssertEqual(ProCopy.whyItCostsQuestion, "Why does Sangrah cost money?")
+        XCTAssertTrue(ProCopy.whyItCosts.contains("Claude, an AI from Anthropic"))
+        XCTAssertTrue(ProCopy.whyItCosts.contains("Saving, reading and listening stay free"))
     }
 
     // MARK: - Plan status
@@ -84,12 +101,12 @@ final class PlanTests: XCTestCase {
     func testStatusText() {
         let end = date("2026-11-29T10:00:00Z")
         XCTAssertNil(plan().statusText(calendar: utc))
-        XCTAssertEqual(plan(tier: .pro, limit: nil, trialEndsAt: end, expiresAt: end, autoRenews: true).statusText(calendar: utc),
+        XCTAssertEqual(plan(tier: .pro, trialEndsAt: end, expiresAt: end, autoRenews: true).statusText(calendar: utc),
                        "Free month ends 29 Nov")
-        XCTAssertEqual(plan(tier: .pro, limit: nil, trialEndsAt: end, expiresAt: end, autoRenews: false).statusText(calendar: utc),
+        XCTAssertEqual(plan(tier: .pro, trialEndsAt: end, expiresAt: end, autoRenews: false).statusText(calendar: utc),
                        "Free month ends 29 Nov; won't renew")
-        XCTAssertEqual(plan(tier: .pro, limit: nil, expiresAt: end, autoRenews: true).statusText(calendar: utc), "Renews 29 Nov")
-        XCTAssertEqual(plan(tier: .pro, limit: nil, expiresAt: end, autoRenews: false).statusText(calendar: utc), "Ends 29 Nov")
+        XCTAssertEqual(plan(tier: .pro, expiresAt: end, autoRenews: true).statusText(calendar: utc), "Renews 29 Nov")
+        XCTAssertEqual(plan(tier: .pro, expiresAt: end, autoRenews: false).statusText(calendar: utc), "Ends 29 Nov")
     }
 
     // MARK: - Products
@@ -141,7 +158,7 @@ final class PlanTests: XCTestCase {
     }
 
     func testRefusalCodeFromFunctionErrors() {
-        XCTAssertEqual(SupabaseError.rejected(code: "monthly_limit_reached", message: "x").refusalCode, "monthly_limit_reached")
+        XCTAssertEqual(SupabaseError.rejected(code: "daily_limit_reached", message: "x").refusalCode, "daily_limit_reached")
         XCTAssertEqual(SupabaseError.rejected(code: "pro_required", message: "Compose is part of Sangrah Pro.").errorDescription,
                        "Compose is part of Sangrah Pro.")
         XCTAssertNil(SupabaseError.requestFailed.refusalCode)

@@ -15,6 +15,7 @@ struct LibraryView: View {
     @State private var selectedDocuments: Set<UUID> = []
     @State private var showingCompose = false
     @State private var showingComposePaywall = false
+    @State private var showingSavesPaywall = false
     @ObservedObject private var subscriptions = SubscriptionService.shared
     @Environment(\.scenePhase) private var scenePhase
 
@@ -182,6 +183,21 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $showingComposePaywall) {
                 PaywallView(reason: .compose)
+            }
+            .sheet(isPresented: $showingSavesPaywall) {
+                PaywallView(reason: .dailyLimit)
+            }
+            .alert("Today's free saves are used up", isPresented: .init(
+                get: { viewModel.saveLimitMessage != nil },
+                set: { if !$0 { viewModel.saveLimitMessage = nil } }
+            )) {
+                Button("Go Pro") {
+                    viewModel.saveLimitMessage = nil
+                    showingSavesPaywall = true
+                }
+                Button("Not Now", role: .cancel) { viewModel.saveLimitMessage = nil }
+            } message: {
+                Text(viewModel.saveLimitMessage ?? "")
             }
             .sheet(isPresented: $showingCompose) {
                 ComposeView(

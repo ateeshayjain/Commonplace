@@ -12,7 +12,7 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 - ✅ Built: Daily Quote home-screen widget (`SangrahWidget`) with Shuffle
 - ✅ Built: Listen: saves read aloud with Apple's on-device voices (default Lee, Premium, Australian), mini player, lock-screen controls, voice and speed in Profile
 - ✅ Built: Phase 2 - Compose (multi-doc synthesis), Campaigns (social publishing), voice profiles, OAuth (Twitter/LinkedIn)
-- ✅ Built, not deployed: free and Pro tiers (StoreKit 2 "Sangrah Pro", limits enforced in Edge Functions); see [`docs/subscriptions.md`](docs/subscriptions.md)
+- ✅ Built, not deployed: free (5 saves a day, no AI) and Pro (smart summaries) tiers, StoreKit 2 "Sangrah Pro", limits enforced in Edge Functions; see [`docs/subscriptions.md`](docs/subscriptions.md)
 - 🚧 Shipping to TestFlight (see Release below); not yet on the App Store
 
 **Target Users:** Knowledge workers who save articles/threads and want AI insights.
@@ -24,7 +24,7 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 ## Tech Stack
 - **iOS:** Swift 5.9+, SwiftUI, iOS 17+ target
 - **Backend:** Supabase (PostgreSQL + Edge Functions + Auth)
-- **AI:** Claude API — save enrichment (summaries, Key Idea, quotes, tags, screenshot transcription) on Claude Sonnet 5.5 (`claude-sonnet-5-5`) for Pro and Claude Haiku 5.5 (`claude-haiku-5-5`) for free accounts; Claude Opus 5.5 (`claude-opus-5-5`) for post generation, voice analysis and multi-doc synthesis (Compose)
+- **AI:** Claude API, Pro only — the smart summary on saves (summaries, Key Idea, quotes, tags, screenshot transcription) on Claude Sonnet 5.5 (`claude-sonnet-5-5`); Claude Opus 5.5 (`claude-opus-5-5`) for post generation, voice analysis and multi-doc synthesis (Compose). Free screenshot saves are read on the device with Apple's Vision text recognition
 - **Payments:** StoreKit 2 auto-renewable subscriptions, confirmed server-side through the App Store Server API
 - **Auth:** Sign in with Apple, Magic Link (OTP)
 - **OAuth:** Twitter OAuth 2.0 (PKCE), LinkedIn OAuth 2.0
@@ -53,9 +53,9 @@ iOS/
 │   │   └── Onboarding/# AuthView, OnboardingView
 │   ├── DesignSystem/  # Colors, BrandColors (shared with the widget), Typography, Spacing, Components/
 │   └── Utilities/     # Extensions, HapticManager
-├── CommonplaceShareExtension/ # Share sheet: links and screenshots
+├── CommonplaceShareExtension/ # Share sheet: links and screenshots (ScreenshotReader: on-device text recognition for free accounts)
 ├── SangrahWidget/     # Daily Quote widget (WidgetKit + AppIntent shuffle)
-├── Shared/            # WidgetQuote.swift: compiled into the app and the widget
+├── Shared/            # WidgetQuote.swift (app + widget); ScreenshotText.swift, PlanTierCache.swift (app + share extension)
 ├── CommonplaceTests/  # XCTest unit tests (hosted in the app)
 └── Sangrah.storekit   # Local StoreKit config ("Sangrah Pro" monthly + yearly, free month); used by the Run scheme and the StoreKit tests
 ```
@@ -111,15 +111,18 @@ pending → fetching → extracting → enriching → rendering → completed
 ### Subscription Tiers (enforced in Edge Functions; details in `docs/subscriptions.md`)
 | | Free | Pro (`pro`, `creator`, `team`) |
 |---|---|---|
-| AI-processed saves / calendar month (UTC) | 20, on Haiku 5.5; later saves are stored and wait (`documents.ai_waiting`) | unlimited, on Sonnet 5.5 |
-| Compose runs / month | none (paywall) | 10, on Opus 5.5 |
-| Everything without Claude (Library, search, quotes, PDFs, widget, Weekly Summary) | unlimited | unlimited |
+| Saves | 5 per UTC day; the 6th gets 402 `daily_limit_reached` | unlimited |
+| Smart summary (Key Idea, summaries, key points, quotes, tags, auto-categories) | none: saved with `documents.ai_waiting = true`, Detail shows a "Smart summary" Pro card | Sonnet 5.5, fair use 300 per UTC month (then saves wait) |
+| Screenshot saves | read on the device (Vision) by the Share Extension, sent as `screenshotText` | uploaded and read by Claude |
+| Compose / posts / voice analysis | none (paywall) | Compose 10 per month on Opus 5.5; posts and voice analysis on Opus 5.5 |
+| Clean text, PDF, Listen, search, quotes tab, widget, Weekly Summary | unlimited | unlimited |
 
-- Limits, models and product ids live in `supabase/functions/_shared/tiers.ts`; iOS `Plan.swift` only displays what `verify-purchase` returns
-- A Claude call takes a credit with `claimUsage` (`claim_ai_usage`, atomic) and gives it back with `releaseUsage` if Claude doesn't answer. If the check itself fails, the save waits; never run Claude unmetered
+- Limits and product ids live in `supabase/functions/_shared/tiers.ts`; iOS `Plan.swift` only displays what `verify-purchase` returns
+- Free saves never call Claude. A Pro summary claims one use with `claimUsage` (`claim_usage`, atomic) and gives it back with `releaseUsage` if Claude doesn't answer; if the check itself fails the save waits. Never run Claude unmetered
+- The Share Extension picks the screenshot path from `PlanTierCache` (App Group hint written by `SubscriptionService`); a stale Pro hint gets `pro_required` and falls back to on-device reading
 - `users.subscription_tier` / `subscription_expires_at` can only be changed by the service role (trigger in migration 010)
 - Product ids: `sangrah.pro.monthly`, `sangrah.pro.yearly` (group "Sangrah Pro"); keep `tiers.ts`, `Plan.swift` and `Sangrah.storekit` in step
-- Campaigns (`generate-posts`) and voice analysis aren't limited yet
+- Posts and voice analysis are Pro only but have no monthly cap yet
 
 ### Source Types
 twitter, linkedin, linkedinArticle, article, substack, medium, youtube, podcast, pdf, reddit, hackernews, instagram, threads, email, screenshot, manual, bookOcr (`book_ocr`), unknown
@@ -149,9 +152,9 @@ twitter, linkedin, linkedinArticle, article, substack, medium, youtube, podcast,
 - `saved_quotes` (migration 007): bookmarked quotes, unique per (user, document, text)
 - `screenshots` storage bucket (migration 008): private, `{user_id}/{batch}/{n}.jpg`, JPEG only, 6 MB
 - `categories`: built-in rows have `user_id` null; readers add and delete their own (delete policy: migration 009)
-- `ai_usage` (migration 010): Claude calls per user, calendar month and feature (`save`, `compose`). Readers can read theirs; only `claim_ai_usage` / `release_ai_usage` (service role) write
+- `usage_counts` (migration 010): per user, feature and period: `save` per UTC day (free), `smart_save` and `compose` per UTC month (Pro). Readers can read theirs; only `claim_usage` / `release_usage` (service role) write
 - `app_store_subscriptions` (migration 010): one row per App Store original transaction, its owner, status, expiry and trial end; `users.subscription_tier` is derived from these rows
-- `documents.ai_waiting` (migration 010): a free save past the monthly limit, stored with its text and `processing_status = completed` so the Library shows it
+- `documents.ai_waiting` (migration 010): a save without a smart summary (every free save, and Pro saves past the month's fair use), stored with its text and `processing_status = completed` so the Library shows it
 - Deleting an account (`delete-account`) removes storage files, then the `users` row (cascades to every table), then the auth user
 
 ### Sangrah Data Model (migration 004)
@@ -185,12 +188,11 @@ static let supabaseAnonKey = "YOUR_SUPABASE_ANON_KEY"
 ### Claude API
 - Used in Edge Functions: `process-url`, `synthesize-content`, `generate-posts`, `analyze-style`
 - Model ids live in `supabase/functions/_shared/models.ts` (`CLAUDE_MODELS`, re-exported by `claude.ts`, which pins the SDK and has `generateText`/`generateJSON`) — change them there, not per function
-  - `saves`: `claude-sonnet-5-5` (process-url, Pro). Chosen on 30 Oct 2026 from a side-by-side run of Opus, Sonnet and Haiku on 15 real saves: Sonnet matched Opus on word-for-word quotes and screenshot text at half the cost (about 1.4¢ per article save, 4¢ per screenshot save, against Opus at 2.8¢ and 8.1¢)
-  - `freeSaves`: `claude-haiku-5-5` (process-url, free tier; about 0.07¢ per article save, 0.2¢ per screenshot save)
+  - `saves`: `claude-sonnet-5-5` (process-url, Pro only). Chosen on 30 Oct 2026 from a side-by-side run of Opus, Sonnet and Haiku on 15 real saves: Sonnet matched Opus on word-for-word quotes and screenshot text at half the cost (about 1.4¢ per article save, 4¢ per screenshot save, against Opus at 2.8¢ and 8.1¢)
   - `standard`: `claude-opus-5-5` (generate-posts, analyze-style, synthesize-content; Compose effort scales with `ThinkingDepth`)
 - Thinking is always on for these models: control depth with `effort`, don't send `thinking: disabled`/`budget_tokens`, `temperature`, or assistant prefill (all return 400)
 - Read text blocks by `type`, not `content[0]` (responses can start with thinking blocks)
-- Server-side refusal fallback is enabled (`fallbacks: 'default'`) except for Haiku 5.5, which has none (`supportsServerFallback`); `generateText`/`generateJSON` throw on `stop_reason: "refusal"`
+- Server-side refusal fallback is enabled (`fallbacks: 'default'`); `generateText`/`generateJSON` throw on `stop_reason: "refusal"`
 - For JSON results use `generateJSON` (structured outputs via `output_config.format`); keep schemas to types/enums/required/`additionalProperties:false` and enforce lengths and counts in code
 - Tags: `_shared/tags.ts` (`slugify` must match the SQL slug rule; `attachTags` upserts by slug and links `document_tags`)
 - Env var: `ANTHROPIC_API_KEY` in Supabase secrets
@@ -264,9 +266,9 @@ For bug fixes:
 3. **Reviewer**: Verify fix, check for regressions
 
 ## Testing
-- iOS: `xcodebuild test -project iOS/Commonplace.xcodeproj -scheme Commonplace -destination 'platform=iOS Simulator,name=<iPhone>' CODE_SIGNING_ALLOWED=NO` runs `CommonplaceTests` (quote text and credits, widget daily pick and shuffle, category slugs, Weekly Summary maths, support links, plan and trial reminder). Tests use the demo documents as fixtures
+- iOS: `xcodebuild test -project iOS/Commonplace.xcodeproj -scheme Commonplace -destination 'platform=iOS Simulator,name=<iPhone>' CODE_SIGNING_ALLOWED=NO` runs `CommonplaceTests` (quote text and credits, widget daily pick and shuffle, category slugs, Weekly Summary maths, support links, plan and trial reminder, joining screenshot text). Tests use the demo documents as fixtures
 - StoreKit: `SubscriptionStoreKitTests` reads `iOS/Sangrah.storekit` with StoreKitTest. The products test skips when StoreKit hasn't applied the file; it applies once the app has been run from Xcode on that simulator (the Run scheme points at `Sangrah.storekit`), after which the test passes from `xcodebuild` too. The two purchase tests run only with `SANGRAH_STOREKIT_PURCHASE_TESTS=1`: without the local StoreKit environment a purchase goes to the real Sandbox and waits on an Apple Account alert. They haven't passed yet
-- Free-plan screens in demo mode: launch a Debug build with `-SangrahDemoFreePlan` (Profile shows 0 of 20 left; Upgrade opens the paywall)
+- Free-plan screens in demo mode: launch a Debug build with `-SangrahDemoFreePlan` (Profile shows "Free: no saves left today"; Upgrade opens the paywall)
 - Edge Functions: `deno test supabase/functions/_shared` and `deno check` on each `index.ts`
 - CI (`.github/workflows/ci.yml`) builds the app, runs the iOS tests, type-checks and tests the Edge Functions on every push
 

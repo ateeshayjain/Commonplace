@@ -77,6 +77,12 @@
 		A10000B2 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B2 /* PaywallView.swift */; };
 		A10000B3 /* PlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B3 /* PlanTests.swift */; };
 		A10000B5 /* SubscriptionStoreKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000B5 /* SubscriptionStoreKitTests.swift */; };
+		A10000C0 /* ScreenshotText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000C0 /* ScreenshotText.swift */; };
+		A10000C1 /* ScreenshotText.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000C0 /* ScreenshotText.swift */; };
+		A10000C2 /* PlanTierCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000C1 /* PlanTierCache.swift */; };
+		A10000C3 /* PlanTierCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000C1 /* PlanTierCache.swift */; };
+		A10000C4 /* ScreenshotReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000C2 /* ScreenshotReader.swift */; };
+		A10000C5 /* ScreenshotTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000C3 /* ScreenshotTextTests.swift */; };
 		A1000084 /* SupportContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000084 /* SupportContactTests.swift */; };
 		A1000090 /* SpeechService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000090 /* SpeechService.swift */; };
 		A1000091 /* NowPlayingBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000091 /* NowPlayingBar.swift */; };
@@ -198,6 +204,10 @@
 		B10000B3 /* PlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanTests.swift; sourceTree = "<group>"; };
 		B10000B4 /* Sangrah.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Sangrah.storekit; sourceTree = "<group>"; };
 		B10000B5 /* SubscriptionStoreKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStoreKitTests.swift; sourceTree = "<group>"; };
+		B10000C0 /* ScreenshotText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotText.swift; sourceTree = "<group>"; };
+		B10000C1 /* PlanTierCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanTierCache.swift; sourceTree = "<group>"; };
+		B10000C2 /* ScreenshotReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotReader.swift; sourceTree = "<group>"; };
+		B10000C3 /* ScreenshotTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotTextTests.swift; sourceTree = "<group>"; };
 		B1000084 /* SupportContactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportContactTests.swift; sourceTree = "<group>"; };
 		C1000004 /* CommonplaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CommonplaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000090 /* SpeechService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechService.swift; sourceTree = "<group>"; };
@@ -484,6 +494,7 @@
 			children = (
 				B1000050 /* ShareViewController.swift */,
 				B1000051 /* ShareView.swift */,
+				B10000C2 /* ScreenshotReader.swift */,
 				B1000052 /* Info.plist */,
 				B1000053 /* CommonplaceShareExtension.entitlements */,
 			);
@@ -504,6 +515,8 @@
 			isa = PBXGroup;
 			children = (
 				B1000071 /* WidgetQuote.swift */,
+				B10000C0 /* ScreenshotText.swift */,
+				B10000C1 /* PlanTierCache.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -517,6 +530,7 @@
 				B1000083 /* WeeklySummaryTests.swift */,
 				B10000B3 /* PlanTests.swift */,
 				B10000B5 /* SubscriptionStoreKitTests.swift */,
+				B10000C3 /* ScreenshotTextTests.swift */,
 				B1000084 /* SupportContactTests.swift */,
 				B1000093 /* SpeechTextTests.swift */,
 			);
@@ -717,6 +731,8 @@
 				A1000020 /* ProfileView.swift in Sources */,
 				A1000067 /* SupportViews.swift in Sources */,
 				A10000B0 /* Plan.swift in Sources */,
+				A10000C0 /* ScreenshotText.swift in Sources */,
+				A10000C2 /* PlanTierCache.swift in Sources */,
 				A10000B1 /* SubscriptionService.swift in Sources */,
 				A10000B2 /* PaywallView.swift in Sources */,
 				A1000021 /* OnboardingView.swift in Sources */,
@@ -756,6 +772,9 @@
 			files = (
 				A1000050 /* ShareViewController.swift in Sources */,
 				A1000051 /* ShareView.swift in Sources */,
+				A10000C1 /* ScreenshotText.swift in Sources */,
+				A10000C3 /* PlanTierCache.swift in Sources */,
+				A10000C4 /* ScreenshotReader.swift in Sources */,
 				A1000052 /* Config.swift in Sources */,
 				A1000054 /* SharedAuthStore.swift in Sources */,
 			);
@@ -781,6 +800,7 @@
 				A1000083 /* WeeklySummaryTests.swift in Sources */,
 				A10000B3 /* PlanTests.swift in Sources */,
 				A10000B5 /* SubscriptionStoreKitTests.swift in Sources */,
+				A10000C5 /* ScreenshotTextTests.swift in Sources */,
 				A1000084 /* SupportContactTests.swift in Sources */,
 				A1000093 /* SpeechTextTests.swift in Sources */,
 			);

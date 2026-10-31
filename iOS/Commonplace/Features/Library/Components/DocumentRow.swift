@@ -53,10 +53,13 @@ struct DocumentRow: View {
                     .foregroundColor(.cpTextSecondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-            } else if document.isWaitingForSummary {
-                Label("Waiting for a summary", systemImage: "hourglass")
-                    .font(.cpFootnote)
+            } else if !document.bodyPlain.isEmpty {
+                // Saves without a smart summary preview the article itself
+                Text(document.bodyPlain.prefix(240).replacingOccurrences(of: "\n", with: " "))
+                    .font(.cpCallout)
                     .foregroundColor(.cpTextSecondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
             }
 
             // Footer

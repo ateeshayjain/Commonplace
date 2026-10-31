@@ -15,9 +15,9 @@ class DocumentDetailViewModel: ObservableObject {
     @Published var sharedFile: SharedFile?
     /// A file ready to open in the in-app PDF reader.
     @Published var viewedFile: SharedFile?
-    /// Summarising a save that waited for an AI credit
+    /// Summarising a save that has no smart summary yet (Pro)
     @Published var isSummarising = false
-    /// Set when Summarise found no credits left, to show the paywall
+    /// Set when Summarise was refused (not Pro, or the month is used up), to show the paywall
     @Published var needsUpgrade = false
 
     struct SharedFile: Identifiable {
@@ -51,8 +51,8 @@ class DocumentDetailViewModel: ObservableObject {
 
     // MARK: - Summarise
 
-    /// Summarises a save that was waiting for a free AI credit, then waits
-    /// for the summary (about as long as a new save takes)
+    /// Pro: writes the smart summary for a save that has none, then waits
+    /// for it (about as long as a new save takes)
     func summarise() async {
         guard document.isWaitingForSummary, !isSummarising else { return }
         isSummarising = true
@@ -60,7 +60,7 @@ class DocumentDetailViewModel: ObservableObject {
 
         do {
             _ = try await documentService.summariseWaitingSave(document.id)
-        } catch let refusal as SupabaseError where refusal.refusalCode == "monthly_limit_reached" {
+        } catch let refusal as SupabaseError where refusal.refusalCode == "pro_required" {
             await SubscriptionService.shared.refreshUsage()
             needsUpgrade = true
             return

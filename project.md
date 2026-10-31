@@ -15,8 +15,8 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (th
 | Database / ORM | Prisma + PostgreSQL | **Supabase Postgres, plain SQL migrations** | RLS policies are the security model; Prisma bypasses them. PRD schema mapped in migration 004 |
 | Job queue | BullMQ (Redis) | **Supabase Queues (pgmq) + a worker Edge Function on pg_cron** | No Redis to run; queue lives in the same database. Decide in Phase 0 (see §6) |
 | File storage | S3 / Cloudflare R2 | **Supabase Storage** (`pdfs` public, `generated-assets` private + signed URLs) | Same auth and RLS as the database |
-| AI | Unspecified | **Claude Sonnet 5.5** (Pro saves), **Claude Haiku 5.5** (free saves), **Claude Opus 5.5** (posts, voice analysis, Compose) | Set in `supabase/functions/_shared/models.ts`; saves moved from Opus to Sonnet on 30 Oct 2026 after a 15-save comparison; free saves on Haiku and Compose moved from Fable 5.1 to Opus 5.5 with the tiers |
-| Pricing | Unspecified | **Free** (20 AI saves a month) and **Sangrah Pro** (₹299/month or ₹2,499/year; $5.99 / $49.99; first month free) | StoreKit 2, limits enforced in Edge Functions; [`docs/subscriptions.md`](docs/subscriptions.md) |
+| AI | Unspecified | **Claude Sonnet 5.5** (the smart summary on Pro saves), **Claude Opus 5.5** (posts, voice analysis, Compose); Apple Vision on the device for free screenshot saves | Set in `supabase/functions/_shared/models.ts`; saves moved from Opus to Sonnet on 30 Oct 2026 after a 15-save comparison; Compose moved from Fable 5.1 to Opus 5.5 with the tiers |
+| Pricing | Unspecified | **Free**: 5 saves a day, no AI (clean text, PDF, Listen, search). **Sangrah Pro**: smart summaries, unlimited saves, Compose (₹299/month or ₹2,499/year; $5.99 / $49.99; first month free) | Decided 31 Oct 2026: every summary is a paid Claude API call, so the AI is what Pro pays for. StoreKit 2, limits enforced in Edge Functions; [`docs/subscriptions.md`](docs/subscriptions.md) |
 | Web app | Next.js | **Deferred** | iOS first; a web client can reuse the same Supabase backend later |
 
 ### PRD → codebase mapping
@@ -63,16 +63,16 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (th
 | | Weekly Summary | ✅ Built | Last 7 days: saves per day, quotes, categories, topics, sources, collapsible History |
 | | Account | ✅ Built | Edit Title, saved categories, Delete Account, FAQ, Privacy Policy, Contact Support |
 | | Social posting (Twitter/LinkedIn OAuth, voice profiles, campaigns) | ✅ Built | Commonplace Phase 2; keep |
-| | Free and Pro tiers | 🟡 Built, not deployed | Paywall, Upgrade/Restore/Manage in Profile, "N of 20 saves left", waiting saves with Summarise, Compose Pro only; server-side limits, App Store verification. Needs App Store Connect setup and deploys ([`docs/subscriptions.md`](docs/subscriptions.md)) |
+| | Free and Pro tiers | 🟡 Built, not deployed | Paywall with a Free vs Pro comparison and "Why does Sangrah cost money?", plan card in Profile ("Free: 3 of 5 saves left today"), Smart summary card on free saves, daily limit alert, on-device screenshot reading for free accounts, Compose and posts Pro only; server-side limits, App Store verification. Needs App Store Connect setup and deploys ([`docs/subscriptions.md`](docs/subscriptions.md)) |
 
 ### Infrastructure
 
 | Item | Status |
 |---|---|
-| Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | **Live.** Migrations 001–009 applied; 010 (tiers) written, not applied. Edge Functions deployed: `process-url` v16 (saves on Sonnet 5.5 since 30 Oct 2026), `generate-pdf` v10, `delete-account` v1, plus `synthesize-content`, `generate-posts`, `analyze-style`, `oauth-connect`. Not deployed yet: tier changes to `process-url` and `synthesize-content`, new `verify-purchase` and `app-store-notifications` |
+| Supabase project `commonplace` (`gfnqjaombxxkiinxhahv`, ap-south-1) | **Live.** Migrations 001–009 applied; 010 (tiers) written, not applied. Edge Functions deployed: `process-url` v16 (saves on Sonnet 5.5 since 30 Oct 2026), `generate-pdf` v10, `delete-account` v1, plus `synthesize-content`, `generate-posts`, `analyze-style`, `oauth-connect`. Not deployed yet: tier changes to `process-url`, `synthesize-content`, `generate-posts`, `analyze-style`; new `verify-purchase` and `app-store-notifications` |
 | iOS app | **On TestFlight**, build 27 (2026-10-30), App Store Connect record "Sangrah: Commonplace Book" |
 | `ANTHROPIC_API_KEY` secret | Set; enrichment runs on real saves |
-| Tests / CI | CI builds the app, runs 46 iOS unit tests (`CommonplaceTests`; 3 more StoreKit tests skip in CI: the products test needs the app run from Xcode first, the purchase tests are opt-in), type-checks every Edge Function and runs 54 Deno tests. No UI tests |
+| Tests / CI | CI builds the app, runs 59 iOS unit tests (`CommonplaceTests`; 3 more StoreKit tests skip in CI: the products test needs the app run from Xcode first, the purchase tests are opt-in), type-checks every Edge Function and runs 53 Deno tests. No UI tests |
 | App Store subscriptions | Not set up: Paid Apps agreement, "Sangrah Pro" group, In-App Purchase key, server notification URL (steps in [`docs/subscriptions.md`](docs/subscriptions.md) §3) |
 
 ### Known issues and tech debt
@@ -92,9 +92,10 @@ This repo started as **Commonplace** (a save-and-summarize iOS app). Sangrah (th
 | 11 | Custom categories aren't used by auto-categorisation (it picks from the built-in list) | `process-url` | 2 |
 | 12 | The App Store Connect API key can't create profiles for new bundle ids; first upload of a new extension needs an Xcode-account export | `scripts/upload-build.sh` | 5 |
 | 13 | Not yet checked on a phone: widget Shuffle with several quotes, Delete Account end to end, category persistence | — | 5 |
-| 14 | Campaigns (`generate-posts`) and voice analysis (`analyze-style`) run on Opus 5.5 with no tier limit | `generate-posts`, `analyze-style` | 5 |
-| 15 | A lapsed Pro tier is renewed only by the App Store notification or the next app launch; share-extension saves in between run on the free model | `verify-purchase` | 5 |
+| 14 | Posts (`generate-posts`) and voice analysis (`analyze-style`) are Pro only but have no monthly cap | `generate-posts`, `analyze-style` | 5 |
+| 15 | A lapsed Pro tier is renewed only by the App Store notification or the next app launch; saves in between are treated as free (no summary) | `verify-purchase` | 5 |
 | 16 | The privacy policy has no public URL, which App Store subscriptions require | `SupportViews.swift` | 5 |
+| 17 | A free account's 5 saves a day renew when the UTC day turns (5:30 am in India, evening in the US), not at local midnight | `tiers.ts` | 5 |
 
 ---
 
@@ -115,7 +116,7 @@ Generated assets ─┘                  │        └─► insert generated_a
                                      Postgres (RLS)  documents, tags, collections,
                                                      generated_assets, campaigns, ...
                                      Storage         pdfs (public), generated-assets (private)
-                                     Claude API      Haiku 5.5 / Sonnet 5.5 / Opus 5.5 via _shared/claude.ts
+                                     Claude API      Sonnet 5.5 / Opus 5.5 via _shared/claude.ts (Pro)
 ```
 
 **Async job pattern** (ingestion and every generator):
@@ -253,7 +254,7 @@ Phase 0 ──► Phase 1 (queue) ──► Phase 2 ──► Phase 3 ──► 
 | Speech-to-text for Reels and audio | Vendor TBD | Phase 1 |
 | Rendering host | Satori + resvg-wasm in Edge Functions / container service | Phase 4 |
 | Generated video | TTS + template animation / video model vendor / skip for v1 | Post-launch |
-| ~~Model cost controls~~ | Decided 30 Oct 2026: free saves on Haiku 5.5, Pro saves on Sonnet 5.5, Compose (Pro only) on Opus 5.5; Fable 5.1 no longer used | — |
+| ~~Model cost controls~~ | Decided 31 Oct 2026: free saves make no Claude call; Pro saves on Sonnet 5.5, Compose (Pro only) on Opus 5.5; Fable 5.1 no longer used | — |
 | Bundle id, App Group, URL scheme | Name is **Sangrah** (decided). Keep `app.commonplace.*` ids until App Store submission, then move to `app.sangrah.*` (needs new App ID + provisioning) | Phase 5 |
 
 ---

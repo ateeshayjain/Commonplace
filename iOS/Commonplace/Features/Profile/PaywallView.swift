@@ -1,19 +1,21 @@
 import SwiftUI
 import StoreKit
 
-/// Sangrah Pro: shown from Profile's Upgrade row, from a save waiting for an
-/// AI credit, and from Compose. Prices and the free month come from the App
-/// Store; the server confirms the purchase before Pro switches on.
+/// Sangrah Pro: shown from Profile's Upgrade row, a save's Smart summary card,
+/// the 6th save of the day, and Compose. Prices and the free month come from
+/// the App Store; the server confirms the purchase before Pro switches on.
 struct PaywallView: View {
     enum Reason {
         case upgrade
-        case saves
+        case summary
+        case dailyLimit
         case compose
 
         var headline: String {
             switch self {
             case .upgrade: return "Get more from what you save"
-            case .saves: return "You've used this month's free AI saves"
+            case .summary: return "Smart summaries are part of Pro"
+            case .dailyLimit: return "You've saved 5 articles today"
             case .compose: return "Compose is part of Sangrah Pro"
             }
         }
@@ -32,7 +34,8 @@ struct PaywallView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: CPSpacing.lg) {
                     header
-                    benefits
+                    comparison
+                    whyItCosts
                     if subscriptions.products.isEmpty {
                         unavailable
                     } else {
@@ -79,30 +82,68 @@ struct PaywallView: View {
         }
     }
 
-    private var benefits: some View {
-        VStack(alignment: .leading, spacing: CPSpacing.sm) {
-            benefit("infinity", "Unlimited AI summaries", "Free accounts get 20 a month")
-            benefit("text.quote", "Sharper summaries and quotes", "Every save read by Claude Sonnet")
-            benefit("square.and.pencil", "Compose", "Turn several saves into posts, threads and articles, 10 times a month")
-            benefit("books.vertical", "Everything else stays free", "Library, search, quotes, PDFs, the widget and your Weekly Summary")
+    /// Free vs Pro, in plain words
+    private var comparison: some View {
+        VStack(spacing: 0) {
+            comparisonRow("", free: "Free", pro: "Pro", isHeader: true)
+            comparisonRow("Saves", free: "5 a day", pro: "Unlimited")
+            comparisonRow("Clean article, PDF, Listen, search", free: "check", pro: "check")
+            comparisonRow("Smart summary: Key Idea, summary, key points", free: "", pro: "check")
+            comparisonRow("Quotes to share as cards, tags, categories", free: "", pro: "check")
+            comparisonRow("Screenshots", free: "Read on iPhone", pro: "Read by Claude")
+            comparisonRow("Compose posts and articles", free: "", pro: "10 a month")
         }
+        .background(
+            RoundedRectangle(cornerRadius: CPSpacing.cornerRadiusMedium)
+                .fill(Color.cpBackgroundSecondary)
+        )
     }
 
-    private func benefit(_ icon: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: CPSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 18))
-                .foregroundColor(.cpTint)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.cpHeadline)
-                    .foregroundColor(.cpText)
-                Text(detail)
-                    .font(.cpFootnote)
-                    .foregroundColor(.cpTextSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func comparisonRow(_ feature: String, free: String, pro: String, isHeader: Bool = false) -> some View {
+        HStack(spacing: CPSpacing.sm) {
+            Text(feature)
+                .font(.cpFootnote)
+                .foregroundColor(.cpText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            comparisonCell(free, isHeader: isHeader, highlighted: false)
+            comparisonCell(pro, isHeader: isHeader, highlighted: true)
+        }
+        .padding(.horizontal, CPSpacing.md)
+        .padding(.vertical, CPSpacing.xs)
+    }
+
+    @ViewBuilder
+    private func comparisonCell(_ value: String, isHeader: Bool, highlighted: Bool) -> some View {
+        Group {
+            switch value {
+            case "check":
+                Image(systemName: "checkmark")
+                    .foregroundColor(highlighted ? .cpTint : .cpTextSecondary)
+                    .accessibilityLabel("Included")
+            case "":
+                Image(systemName: "minus")
+                    .foregroundColor(.cpTextTertiary)
+                    .accessibilityLabel("Not included")
+            default:
+                Text(value)
+                    .font(isHeader ? .cpHeadline : .cpCaption1)
+                    .foregroundColor(highlighted ? .cpTint : .cpTextSecondary)
+                    .multilineTextAlignment(.center)
             }
+        }
+        .frame(width: 76)
+    }
+
+    private var whyItCosts: some View {
+        VStack(alignment: .leading, spacing: CPSpacing.xxs) {
+            Text(ProCopy.whyItCostsQuestion)
+                .font(.cpHeadline)
+                .foregroundColor(.cpText)
+            Text(ProCopy.whyItCosts)
+                .font(.cpFootnote)
+                .foregroundColor(.cpTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -232,5 +273,5 @@ struct PaywallView: View {
 }
 
 #Preview {
-    PaywallView(reason: .saves)
+    PaywallView(reason: .dailyLimit)
 }

@@ -249,8 +249,8 @@ struct ProfileView: View {
 
     // MARK: - Plan
 
-    /// The reader's plan, this month's AI saves, and the way to upgrade,
-    /// manage or restore a subscription
+    /// The reader's plan, today's saves (free) or the month's smart summaries
+    /// (Pro), and the way to upgrade, manage or restore a subscription
     @ViewBuilder
     private var planSection: some View {
         let plan = subscriptions.plan
@@ -274,8 +274,12 @@ struct ProfileView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    StatsRow(icon: "doc.text.magnifyingglass", title: plan.savesLeftText, value: "")
-                    if let footnote = plan.savesFootnote() {
+                    if let fairUse = plan.smartSummariesText {
+                        StatsRow(icon: "text.badge.star", title: fairUse, value: "")
+                    } else {
+                        StatsRow(icon: "tray.and.arrow.down", title: plan.planCardText, value: "")
+                    }
+                    if let footnote = plan.usageFootnote() {
                         Text(footnote)
                             .font(.cpCaption1)
                             .foregroundColor(.cpTextSecondary)
@@ -303,7 +307,7 @@ struct ProfileView: View {
                             Text("Upgrade to Pro")
                                 .font(.cpHeadline)
                                 .foregroundColor(.cpText)
-                            Text("Unlimited AI summaries, Compose, first month free")
+                            Text("Smart summaries, unlimited saves, Compose. First month free")
                                 .font(.cpFootnote)
                                 .foregroundColor(.cpTextSecondary)
                         }

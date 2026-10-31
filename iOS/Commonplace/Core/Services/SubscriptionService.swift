@@ -51,6 +51,7 @@ final class SubscriptionService: ObservableObject {
     func reset() {
         plan = nil
         error = nil
+        PlanTierCache.clear()
     }
 
     func loadProducts() async {
@@ -79,6 +80,7 @@ final class SubscriptionService: ObservableObject {
         if isDemo {
             let demo = PlanSummary.demo()
             plan = demo
+            PlanTierCache.store(isPro: demo.isPro)
             AuthService.shared.currentUser?.subscriptionTier = demo.isPro ? .pro : .free
             return
         }
@@ -127,11 +129,13 @@ final class SubscriptionService: ObservableObject {
     private func apply(_ plan: PlanSummary) {
         let wasPro = self.plan?.isPro ?? false
         self.plan = plan
+        // The Share Extension reads screenshots on the device unless the reader is on Pro
+        PlanTierCache.store(isPro: plan.isPro)
         // The profile badge reads the user row, which the server just changed
         AuthService.shared.currentUser?.subscriptionTier = plan.isPro ? .pro : .free
         AuthService.shared.currentUser?.subscriptionExpiresAt = plan.expiresAt
         if plan.isPro && !wasPro {
-            // Saves that waited for a free credit get summarised now
+            // The newest saves made on the free plan get their smart summary now
             Task { try? await DocumentService.shared.summariseWaitingSaves() }
         }
     }

@@ -8,8 +8,10 @@ class LibraryViewModel: ObservableObject {
     @Published var isLoading = false
     /// Links saved from this device whose AI processing has not finished yet.
     @Published var pendingSaveCount = 0
-    /// Shown above the list when a save came back without a summary
+    /// Shown above the list when a Pro save came back without its smart summary
     @Published var waitingNotice: String?
+    /// The free day's saves are used up: the server's message, shown with Go Pro
+    @Published var saveLimitMessage: String?
     /// Second filter axis next to categories: where the item came from.
     @Published var selectedSource: SourceType? {
         didSet { applyFilters() }
@@ -318,6 +320,9 @@ class LibraryViewModel: ObservableObject {
             HapticManager.saveSuccess()
             pendingSaveCount += 1
             Task { await waitForProcessing(of: response.id) }
+        } catch let refusal as SupabaseError where refusal.refusalCode == "daily_limit_reached" {
+            saveLimitMessage = refusal.localizedDescription
+            HapticManager.error()
         } catch {
             self.error = error
             HapticManager.error()
@@ -335,8 +340,9 @@ class LibraryViewModel: ObservableObject {
             switch document.processingStatus {
             case .completed:
                 await loadDocuments()
-                if document.isWaitingForSummary {
-                    waitingNotice = "Saved without a summary: you've used this month's free AI saves. Open it to summarise it later, or go Pro."
+                // Free saves never have one; on Pro it means the month's fair use is used up
+                if document.isWaitingForSummary, SubscriptionService.shared.plan?.isPro == true {
+                    waitingNotice = "Saved without a smart summary: you've used this month's. It gets one next month."
                 }
                 await SubscriptionService.shared.refreshUsage()
                 return
