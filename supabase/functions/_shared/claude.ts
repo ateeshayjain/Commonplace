@@ -11,19 +11,6 @@ export { CLAUDE_MODELS, type ClaudeModel };
 
 export type ClaudeEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-// Server-side refusal fallback: if a safety classifier declines, the API re-runs
-// the request on a fallback model. Haiku 5.5 has none (a fallback list is a 400),
-// so its requests go without the parameter and a refusal is final.
-export function supportsServerFallback(model: ClaudeModel): boolean {
-  return model !== CLAUDE_MODELS.freeSaves;
-}
-
-function fallbackParams(model: ClaudeModel) {
-  return supportsServerFallback(model)
-    ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
-    : {};
-}
-
 interface GenerateTextOptions {
   model: ClaudeModel;
   prompt: string;
@@ -43,7 +30,9 @@ export async function generateText(
     max_tokens: maxTokens,
     system,
     output_config: { effort },
-    ...fallbackParams(model),
+    // If a safety classifier declines, the API re-runs the request on a fallback model
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -100,7 +89,8 @@ export async function generateJSON<T>(
       effort,
       format: { type: 'json_schema', schema },
     },
-    ...fallbackParams(model),
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
     messages: [{ role: 'user', content }],
   });
 

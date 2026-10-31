@@ -1,6 +1,8 @@
 -- Migration 010: Free and Pro tiers
--- Limits live in supabase/functions/_shared/tiers.ts; this migration stores
--- what they are checked against and stops users from changing their own tier.
+-- Free: up to 5 saves a day, no Claude. Pro: smart summaries (fair use),
+-- Compose and post generation. Limits live in supabase/functions/_shared/tiers.ts;
+-- this migration stores what they are checked against and stops users from
+-- changing their own tier.
 
 -- ============================================
 -- USERS: only the service role changes the tier
@@ -36,44 +38,50 @@ CREATE TRIGGER users_protect_subscription
   FOR EACH ROW EXECUTE FUNCTION protect_subscription_columns();
 
 -- ============================================
--- AI USAGE: Claude calls per user per calendar month
+-- USAGE COUNTS: saves per day, smart summaries and Compose runs per month
 -- ============================================
--- Counted separately from documents so deleting saves doesn't give credits back.
-CREATE TABLE ai_usage (
+-- Counted separately from documents so deleting saves doesn't give them back.
+-- Free accounts: 'save' per UTC day. Pro: 'smart_save' (Claude summaries,
+-- fair use) and 'compose' per UTC calendar month.
+CREATE TABLE usage_counts (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  period DATE NOT NULL,  -- first day of the calendar month, UTC
-  feature TEXT NOT NULL CHECK (feature IN ('save', 'compose')),
+  period DATE NOT NULL,  -- the UTC day ('save') or the first day of the UTC month
+  feature TEXT NOT NULL CHECK (feature IN ('save', 'smart_save', 'compose')),
   used INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
   PRIMARY KEY (user_id, period, feature)
 );
 
-ALTER TABLE ai_usage ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usage_counts ENABLE ROW LEVEL SECURITY;
 
--- Readers see their own counts (Profile: "N of 20 saves left"); only Edge
--- Functions write them
-CREATE POLICY "Users can view own AI usage" ON ai_usage
+-- Readers see their own counts (Profile: "3 of 5 saves left today"); only
+-- Edge Functions write them
+CREATE POLICY "Users can view own usage" ON usage_counts
   FOR SELECT USING ((SELECT auth.uid()) = user_id);
 
--- Takes one use of `feature` this month if fewer than p_limit are used
--- (p_limit NULL = unlimited, still counted). Returns the month and the new
--- count, or no row when the limit is reached. One statement, so two saves
--- arriving together can't both take the last credit.
-CREATE OR REPLACE FUNCTION claim_ai_usage(p_user_id UUID, p_feature TEXT, p_limit INTEGER)
+-- Takes one use of `feature` in the current day or month (p_period) if fewer
+-- than p_limit are used (p_limit NULL = unlimited, still counted). Returns the
+-- period and the new count, or no row when the limit is reached. One
+-- statement, so two saves arriving together can't both take the last one.
+CREATE OR REPLACE FUNCTION claim_usage(p_user_id UUID, p_feature TEXT, p_limit INTEGER, p_period TEXT)
 RETURNS TABLE (period DATE, used INTEGER)
 LANGUAGE plpgsql
 SET search_path = public, pg_catalog
 AS $$
--- The output columns share names with ai_usage's columns
+-- The output columns share names with usage_counts' columns
 #variable_conflict use_column
 DECLARE
-  v_period DATE := date_trunc('month', now() AT TIME ZONE 'UTC')::date;
+  v_period DATE;
 BEGIN
+  IF p_period NOT IN ('day', 'month') THEN
+    RAISE EXCEPTION 'p_period must be day or month';
+  END IF;
   IF p_limit IS NOT NULL AND p_limit <= 0 THEN
     RETURN;
   END IF;
+  v_period := date_trunc(p_period, now() AT TIME ZONE 'UTC')::date;
 
   RETURN QUERY
-  INSERT INTO ai_usage AS u (user_id, period, feature, used)
+  INSERT INTO usage_counts AS u (user_id, period, feature, used)
   VALUES (p_user_id, v_period, p_feature, 1)
   ON CONFLICT (user_id, period, feature) DO UPDATE
     SET used = u.used + 1
@@ -82,28 +90,29 @@ BEGIN
 END;
 $$;
 
--- Gives a use back when the Claude call it was claimed for didn't happen
-CREATE OR REPLACE FUNCTION release_ai_usage(p_user_id UUID, p_feature TEXT, p_period DATE)
+-- Gives a use back when the save or Claude call it was claimed for didn't happen
+CREATE OR REPLACE FUNCTION release_usage(p_user_id UUID, p_feature TEXT, p_period DATE)
 RETURNS void
 LANGUAGE sql
 SET search_path = public, pg_catalog
 AS $$
-  UPDATE ai_usage
+  UPDATE usage_counts
   SET used = GREATEST(used - 1, 0)
   WHERE user_id = p_user_id AND feature = p_feature AND period = p_period;
 $$;
 
-REVOKE EXECUTE ON FUNCTION claim_ai_usage(UUID, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION release_ai_usage(UUID, TEXT, DATE) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION claim_ai_usage(UUID, TEXT, INTEGER) TO service_role;
-GRANT EXECUTE ON FUNCTION release_ai_usage(UUID, TEXT, DATE) TO service_role;
+REVOKE EXECUTE ON FUNCTION claim_usage(UUID, TEXT, INTEGER, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION release_usage(UUID, TEXT, DATE) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION claim_usage(UUID, TEXT, INTEGER, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION release_usage(UUID, TEXT, DATE) TO service_role;
 
 -- ============================================
--- DOCUMENTS: saves waiting for a free AI credit
+-- DOCUMENTS: saves without a smart summary yet
 -- ============================================
--- A free reader's save past the monthly limit is stored (link, title, text)
--- and marked completed so it shows in the Library, with ai_waiting set until
--- it is summarised (Summarise on the save, or automatically after upgrading).
+-- Free saves are stored with their text and no Claude call; a Pro save past
+-- the monthly fair-use limit waits the same way. Both are marked completed so
+-- they show in the Library, with ai_waiting set until they are summarised
+-- (Summarise on a Pro account, or automatically after upgrading).
 ALTER TABLE documents ADD COLUMN ai_waiting BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX idx_documents_ai_waiting ON documents(user_id, created_at DESC) WHERE ai_waiting;

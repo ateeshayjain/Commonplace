@@ -1,8 +1,8 @@
 // Supabase Edge Function: verify-purchase
 // The app sends a StoreKit transaction after a purchase, a restore or at launch;
 // this asks Apple for the subscription's real status, links it to the caller
-// and sets their tier. With no transaction it just returns the plan and this
-// month's usage (Profile, paywall, save counter).
+// and sets their tier. With no transaction it just returns the plan, today's
+// saves and this month's Pro usage (Profile, paywall, save counter).
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -22,7 +22,7 @@ import {
   SubscriptionWithoutAccount,
   type SubscriptionDetails,
 } from '../_shared/subscriptions.ts';
-import { usageThisMonth } from '../_shared/usage.ts';
+import { currentUsage } from '../_shared/usage.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -120,7 +120,7 @@ serve(async (req) => {
       };
     }
 
-    const used = await usageThisMonth(supabase, user.id);
+    const used = await currentUsage(supabase, user.id);
     return reply(planSummary(details.tier, used, details));
   } catch (error) {
     console.error('verify-purchase error:', error);

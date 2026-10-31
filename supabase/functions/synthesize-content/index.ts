@@ -4,7 +4,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Anthropic, CLAUDE_MODELS, generateJSON, type ClaudeEffort } from '../_shared/claude.ts';
-import { composeLimitReached, composeRefusal, type LimitError } from '../_shared/tiers.ts';
+import { composeLimitReached, proRequired, type LimitError } from '../_shared/tiers.ts';
 import { claimUsage, loadTier, releaseUsage } from '../_shared/usage.ts';
 
 const corsHeaders = {
@@ -94,8 +94,7 @@ serve(async (req) => {
 
     // Compose is Pro only, PRO_COMPOSE_PER_MONTH runs a month
     const tier = await loadTier(supabase, user.id);
-    const refusal = composeRefusal(tier);
-    if (refusal) return limitResponse(refusal);
+    if (tier === 'free') return limitResponse(proRequired('compose'));
     const claim = await claimUsage(supabase, user.id, 'compose', tier);
     if (!claim) return limitResponse(composeLimitReached());
 

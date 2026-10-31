@@ -1,20 +1,29 @@
-// Free and Pro tiers: limits, models and the monthly period, in one place.
+// Free and Pro tiers: limits and periods, in one place.
 // Mirrored for display only in iOS Core/Models/Plan.swift; the server decides.
 //
-// Cost per article save measured 30 Oct 2026 (15 real saves): Sonnet 5.5 1.4¢,
-// Haiku 5.5 0.07¢ (screenshot saves 4.0¢ / 0.2¢). Everything that doesn't call
-// Claude (Library, search, quotes, PDFs, widget, Weekly Summary) has no limit.
-
-import { CLAUDE_MODELS, type ClaudeModel } from './models.ts';
+// Free: up to FREE_SAVES_PER_DAY saves a day, with no Claude call (clean text,
+// PDF, Listen, search, manual categories, notes, widget). Pro: the smart
+// summary on every save (Key Idea, summaries, key points, quotes, tags,
+// auto-categories; about 1.4¢ an article, 4¢ a screenshot save on Sonnet 5.5,
+// measured 30 Oct 2026), screenshots read by Claude, Compose and post generation.
 
 export type Tier = 'free' | 'pro';
-export type UsageFeature = 'save' | 'compose';
+export type UsageFeature = 'save' | 'smart_save' | 'compose';
+export type UsagePeriod = 'day' | 'month';
 
-// AI-processed saves per calendar month on the free tier; later saves are
-// stored and wait for a credit (documents.ai_waiting)
-export const FREE_SAVES_PER_MONTH = 20;
-// Compose (synthesize-content) runs per calendar month on Pro; free has none
+// Saves per UTC day on the free tier (Pro saves aren't limited)
+export const FREE_SAVES_PER_DAY = 5;
+// Smart summaries per UTC calendar month on Pro (fair use); later saves are
+// kept and wait for next month (documents.ai_waiting)
+export const PRO_SMART_SAVES_PER_MONTH = 300;
+// Compose (synthesize-content) runs per UTC calendar month on Pro
 export const PRO_COMPOSE_PER_MONTH = 10;
+
+export const USAGE_PERIOD: Record<UsageFeature, UsagePeriod> = {
+  save: 'day',
+  smart_save: 'month',
+  compose: 'month',
+};
 
 // App Store product ids in the "Sangrah Pro" subscription group. Kept in step
 // with iOS Plan.swift (SubscriptionProduct) and iOS/Sangrah.storekit.
@@ -36,55 +45,70 @@ export function effectiveTier(row: SubscriptionColumns | null, now: Date = new D
   return 'pro';
 }
 
-export function saveModel(tier: Tier): ClaudeModel {
-  return tier === 'pro' ? CLAUDE_MODELS.saves : CLAUDE_MODELS.freeSaves;
-}
-
-// null = unlimited (still counted, for cost tracking)
+// null = unlimited (still counted, for cost tracking); 0 = not included
 export function usageLimit(tier: Tier, feature: UsageFeature): number | null {
   switch (feature) {
     case 'save':
-      return tier === 'pro' ? null : FREE_SAVES_PER_MONTH;
+      return tier === 'pro' ? null : FREE_SAVES_PER_DAY;
+    case 'smart_save':
+      return tier === 'pro' ? PRO_SMART_SAVES_PER_MONTH : 0;
     case 'compose':
       return tier === 'pro' ? PRO_COMPOSE_PER_MONTH : 0;
   }
 }
 
-// ai_usage.period: the first day of the calendar month, in UTC (matches
-// claim_ai_usage in migration 010)
-export function usagePeriod(now: Date = new Date()): string {
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  return `${now.getUTCFullYear()}-${month}-01`;
+// usage_counts.period: the UTC day, or the first day of the UTC month
+// (matches claim_usage in migration 010)
+export function periodStart(period: UsagePeriod, now: Date = new Date()): string {
+  const day = period === 'day' ? now.getUTCDate() : 1;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-// When this month's credits renew
-export function nextPeriodStart(now: Date = new Date()): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+// When the current day's or month's allowance renews
+export function periodEnd(period: UsagePeriod, now: Date = new Date()): Date {
+  return period === 'day'
+    ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1))
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
 }
 
 // Why a request was turned away, as a stable code the app can branch on
-export type LimitCode = 'pro_required' | 'monthly_limit_reached';
+export type LimitCode = 'pro_required' | 'daily_limit_reached' | 'monthly_limit_reached';
 
 export interface LimitError {
   code: LimitCode;
   message: string;
 }
 
-// Compose before claiming: free readers are told it's a Pro feature rather
-// than that they've used zero of zero
-export function composeRefusal(tier: Tier): LimitError | null {
-  if (tier === 'free') {
-    return { code: 'pro_required', message: 'Compose is part of Sangrah Pro.' };
-  }
-  return null;
+export function proRequired(feature: 'compose' | 'posts' | 'summary' | 'screenshots'): LimitError {
+  const what = {
+    compose: 'Compose is',
+    posts: 'Writing posts is',
+    summary: 'The smart summary is',
+    screenshots: 'Reading screenshots with AI is',
+  }[feature];
+  return { code: 'pro_required', message: `${what} part of Sangrah Pro.` };
+}
+
+export function dailySaveLimitReached(): LimitError {
+  return {
+    code: 'daily_limit_reached',
+    message: `You've saved ${FREE_SAVES_PER_DAY} articles today, the free limit. Save more tomorrow, or go Pro for unlimited saves and smart summaries.`,
+  };
 }
 
 export function composeLimitReached(now: Date = new Date()): LimitError {
-  const renews = nextPeriodStart(now).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+  const renews = periodEnd('month', now).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
   return {
     code: 'monthly_limit_reached',
     message: `You've used all ${PRO_COMPOSE_PER_MONTH} Compose runs this month. More on ${renews}.`,
   };
+}
+
+export interface UsageSummary {
+  used: number;
+  // null = unlimited
+  limit: number | null;
+  resetsAt: string;
 }
 
 // The plan as the app shows it (Profile, paywall, save counter)
@@ -93,9 +117,9 @@ export interface PlanSummary {
   expiresAt: string | null;
   trialEndsAt: string | null;
   autoRenews: boolean | null;
-  periodEnds: string;
-  saves: { used: number; limit: number | null };
-  compose: { used: number; limit: number };
+  saves: UsageSummary;
+  smartSummaries: UsageSummary;
+  compose: UsageSummary;
 }
 
 export function planSummary(
@@ -104,13 +128,18 @@ export function planSummary(
   subscription: { expiresAt: string | null; trialEndsAt: string | null; autoRenews: boolean | null },
   now: Date = new Date()
 ): PlanSummary {
+  const usage = (feature: UsageFeature): UsageSummary => ({
+    used: used[feature] ?? 0,
+    limit: usageLimit(tier, feature),
+    resetsAt: periodEnd(USAGE_PERIOD[feature], now).toISOString(),
+  });
   return {
     tier,
     expiresAt: subscription.expiresAt,
     trialEndsAt: subscription.trialEndsAt,
     autoRenews: subscription.autoRenews,
-    periodEnds: nextPeriodStart(now).toISOString(),
-    saves: { used: used.save ?? 0, limit: usageLimit(tier, 'save') },
-    compose: { used: used.compose ?? 0, limit: usageLimit(tier, 'compose') ?? 0 },
+    saves: usage('save'),
+    smartSummaries: usage('smart_save'),
+    compose: usage('compose'),
   };
 }

@@ -1,7 +1,8 @@
-// Reads a user's tier and claims monthly AI credits (ai_usage, migration 010).
+// Reads a user's tier and claims daily saves and monthly Pro allowances
+// (usage_counts, migration 010).
 // Needs a service-role client: users can read their counts but not write them.
 
-import { effectiveTier, usageLimit, usagePeriod, type Tier, type UsageFeature } from './tiers.ts';
+import { effectiveTier, periodStart, USAGE_PERIOD, usageLimit, type Tier, type UsageFeature } from './tiers.ts';
 
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
@@ -13,15 +14,15 @@ export async function loadTier(supabase: SupabaseClient, userId: string): Promis
     .eq('id', userId)
     .maybeSingle();
   if (error) {
-    // Fail towards the cheaper model and the free limits, never towards free Pro
+    // Fail towards the free limits, never towards free Pro
     console.error('Tier lookup failed:', error);
     return 'free';
   }
   return effectiveTier(data);
 }
 
-// A credit taken for one Claude call; give it back with releaseUsage if the
-// call doesn't happen or fails
+// One use taken (a save, a smart summary, a Compose run); give it back with
+// releaseUsage if what it was for doesn't happen
 export interface UsageClaim {
   userId: string;
   feature: UsageFeature;
@@ -30,20 +31,21 @@ export interface UsageClaim {
   used: number;
 }
 
-// Takes one credit, or returns null when this month's limit is reached
+// Takes one use in the current day or month, or returns null when the limit is reached
 export async function claimUsage(
   supabase: SupabaseClient,
   userId: string,
   feature: UsageFeature,
   tier: Tier
 ): Promise<UsageClaim | null> {
-  const { data, error } = await supabase.rpc('claim_ai_usage', {
+  const { data, error } = await supabase.rpc('claim_usage', {
     p_user_id: userId,
     p_feature: feature,
     p_limit: usageLimit(tier, feature),
+    p_period: USAGE_PERIOD[feature],
   });
   if (error) {
-    throw new Error(`Couldn't check this month's AI usage: ${error.message}`);
+    throw new Error(`Couldn't check usage: ${error.message}`);
   }
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
@@ -51,32 +53,37 @@ export async function claimUsage(
 }
 
 export async function releaseUsage(supabase: SupabaseClient, claim: UsageClaim): Promise<void> {
-  const { error } = await supabase.rpc('release_ai_usage', {
+  const { error } = await supabase.rpc('release_usage', {
     p_user_id: claim.userId,
     p_feature: claim.feature,
     p_period: claim.period,
   });
   if (error) {
-    console.error('Releasing an AI credit failed:', error);
+    console.error('Releasing a use failed:', error);
   }
 }
 
-export async function usageThisMonth(
+// Today's saves and this month's smart summaries and Compose runs
+export async function currentUsage(
   supabase: SupabaseClient,
   userId: string,
   now: Date = new Date()
 ): Promise<Partial<Record<UsageFeature, number>>> {
   const { data, error } = await supabase
-    .from('ai_usage')
-    .select('feature, used')
+    .from('usage_counts')
+    .select('feature, period, used')
     .eq('user_id', userId)
-    .eq('period', usagePeriod(now));
+    .in('period', [periodStart('day', now), periodStart('month', now)]);
   if (error) {
-    throw new Error(`Couldn't read this month's AI usage: ${error.message}`);
+    throw new Error(`Couldn't read usage: ${error.message}`);
   }
   const used: Partial<Record<UsageFeature, number>> = {};
   for (const row of data ?? []) {
-    used[row.feature as UsageFeature] = row.used;
+    const feature = row.feature as UsageFeature;
+    // On the 1st, the day and the month share a date: match the period to the feature
+    if (String(row.period).substring(0, 10) === periodStart(USAGE_PERIOD[feature], now)) {
+      used[feature] = row.used;
+    }
   }
   return used;
 }

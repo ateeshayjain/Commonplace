@@ -23,17 +23,20 @@ function fakeSupabase(options: { rpc?: (name: string, args: Record<string, unkno
   };
 }
 
-Deno.test("claimUsage asks for the tier's limit and returns the claimed month", async () => {
-  const { client, calls } = fakeSupabase({ rpc: () => [{ period: "2026-10-01", used: 20 }] });
+Deno.test("claimUsage: a free save claims one of today's 5", async () => {
+  const { client, calls } = fakeSupabase({ rpc: () => [{ period: "2026-10-30", used: 5 }] });
   const claim = await claimUsage(client, "user-1", "save", "free");
-  assertEquals(calls[0], { name: "claim_ai_usage", args: { p_user_id: "user-1", p_feature: "save", p_limit: 20 } });
-  assertEquals(claim, { userId: "user-1", feature: "save", tier: "free", period: "2026-10-01", used: 20 });
+  assertEquals(calls[0], {
+    name: "claim_usage",
+    args: { p_user_id: "user-1", p_feature: "save", p_limit: 5, p_period: "day" },
+  });
+  assertEquals(claim, { userId: "user-1", feature: "save", tier: "free", period: "2026-10-30", used: 5 });
 });
 
-Deno.test("claimUsage: Pro saves are unlimited but counted; an empty result means the limit is reached", async () => {
+Deno.test("claimUsage: a Pro smart summary claims one of the month's 300; empty means used up", async () => {
   const pro = fakeSupabase({ rpc: () => [{ period: "2026-10-01", used: 101 }] });
-  await claimUsage(pro.client, "user-1", "save", "pro");
-  assertEquals(pro.calls[0].args.p_limit, null);
+  await claimUsage(pro.client, "user-1", "smart_save", "pro");
+  assertEquals(pro.calls[0].args, { p_user_id: "user-1", p_feature: "smart_save", p_limit: 300, p_period: "month" });
 
   const full = fakeSupabase({ rpc: () => [] });
   assertEquals(await claimUsage(full.client, "user-1", "save", "free"), null);
@@ -42,7 +45,7 @@ Deno.test("claimUsage: Pro saves are unlimited but counted; an empty result mean
 Deno.test("releaseUsage gives the credit back to the month it came from", async () => {
   const { client, calls } = fakeSupabase({});
   await releaseUsage(client, { userId: "user-1", feature: "compose", tier: "pro", period: "2026-09-01", used: 4 });
-  assertEquals(calls[0], { name: "release_ai_usage", args: { p_user_id: "user-1", p_feature: "compose", p_period: "2026-09-01" } });
+  assertEquals(calls[0], { name: "release_usage", args: { p_user_id: "user-1", p_feature: "compose", p_period: "2026-09-01" } });
 });
 
 Deno.test("loadTier falls back to free when the lookup fails", async () => {
