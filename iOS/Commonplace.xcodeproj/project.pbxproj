@@ -72,6 +72,11 @@
 		A1000081 /* WidgetQuoteStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000081 /* WidgetQuoteStoreTests.swift */; };
 		A1000082 /* CategorySlugTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000082 /* CategorySlugTests.swift */; };
 		A1000083 /* WeeklySummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000083 /* WeeklySummaryTests.swift */; };
+		A1000090 /* Plan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000090 /* Plan.swift */; };
+		A1000091 /* SubscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000091 /* SubscriptionService.swift */; };
+		A1000092 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000092 /* PaywallView.swift */; };
+		A1000093 /* PlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000093 /* PlanTests.swift */; };
+		A1000095 /* SubscriptionStoreKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000095 /* SubscriptionStoreKitTests.swift */; };
 		A1000084 /* SupportContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000084 /* SupportContactTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -183,6 +188,12 @@
 		B1000081 /* WidgetQuoteStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetQuoteStoreTests.swift; sourceTree = "<group>"; };
 		B1000082 /* CategorySlugTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorySlugTests.swift; sourceTree = "<group>"; };
 		B1000083 /* WeeklySummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklySummaryTests.swift; sourceTree = "<group>"; };
+		B1000090 /* Plan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Plan.swift; sourceTree = "<group>"; };
+		B1000091 /* SubscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionService.swift; sourceTree = "<group>"; };
+		B1000092 /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		B1000093 /* PlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanTests.swift; sourceTree = "<group>"; };
+		B1000094 /* Sangrah.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Sangrah.storekit; sourceTree = "<group>"; };
+		B1000095 /* SubscriptionStoreKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStoreKitTests.swift; sourceTree = "<group>"; };
 		B1000084 /* SupportContactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportContactTests.swift; sourceTree = "<group>"; };
 		C1000004 /* CommonplaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CommonplaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -245,6 +256,7 @@
 				E1000060 /* SangrahWidget */,
 				E1000061 /* Shared */,
 				E1000070 /* CommonplaceTests */,
+				B1000094 /* Sangrah.storekit */,
 				E1000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -348,6 +360,7 @@
 				B1000041 /* Tag.swift */,
 				B1000063 /* SavedQuote.swift */,
 				B1000042 /* DocumentCollection.swift */,
+				B1000090 /* Plan.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -363,6 +376,7 @@
 				B1000064 /* SavedQuoteService.swift */,
 				B1000068 /* CategoryService.swift */,
 				B1000075 /* WidgetQuoteSync.swift */,
+				B1000091 /* SubscriptionService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -409,6 +423,7 @@
 			isa = PBXGroup;
 			children = (
 				B1000020 /* ProfileView.swift */,
+				B1000092 /* PaywallView.swift */,
 				B1000067 /* SupportViews.swift */,
 			);
 			path = Profile;
@@ -490,6 +505,8 @@
 				B1000081 /* WidgetQuoteStoreTests.swift */,
 				B1000082 /* CategorySlugTests.swift */,
 				B1000083 /* WeeklySummaryTests.swift */,
+				B1000093 /* PlanTests.swift */,
+				B1000095 /* SubscriptionStoreKitTests.swift */,
 				B1000084 /* SupportContactTests.swift */,
 			);
 			path = CommonplaceTests;
@@ -679,6 +696,9 @@
 				309324142F307DBD00E2DF1F /* CampaignService.swift in Sources */,
 				A1000020 /* ProfileView.swift in Sources */,
 				A1000067 /* SupportViews.swift in Sources */,
+				A1000090 /* Plan.swift in Sources */,
+				A1000091 /* SubscriptionService.swift in Sources */,
+				A1000092 /* PaywallView.swift in Sources */,
 				A1000021 /* OnboardingView.swift in Sources */,
 				A1000022 /* AuthView.swift in Sources */,
 				A1000023 /* Colors.swift in Sources */,
@@ -736,6 +756,8 @@
 				A1000081 /* WidgetQuoteStoreTests.swift in Sources */,
 				A1000082 /* CategorySlugTests.swift in Sources */,
 				A1000083 /* WeeklySummaryTests.swift in Sources */,
+				A1000093 /* PlanTests.swift in Sources */,
+				A1000095 /* SubscriptionStoreKitTests.swift in Sources */,
 				A1000084 /* SupportContactTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

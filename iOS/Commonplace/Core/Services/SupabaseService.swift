@@ -72,9 +72,51 @@ class SupabaseService {
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            // Edge Functions explain refusals the app acts on (a Pro-only
+            // feature, a monthly limit) as {"error": ..., "code": ...}
+            if let refusal = try? JSONDecoder().decode(FunctionRefusal.self, from: data) {
+                throw SupabaseError.rejected(code: refusal.code, message: refusal.error)
+            }
             throw SupabaseError.requestFailed
         }
         return data
+    }
+
+    private struct FunctionRefusal: Decodable {
+        let error: String
+        let code: String
+    }
+
+    /// Accepts timestamps with and without fractional seconds (Postgres and
+    /// JavaScript's toISOString both add them; `.iso8601` rejects them)
+    static func flexibleDateDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            let formatters: [ISO8601DateFormatter] = [
+                {
+                    let formatter = ISO8601DateFormatter()
+                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    return formatter
+                }(),
+                {
+                    let formatter = ISO8601DateFormatter()
+                    formatter.formatOptions = [.withInternetDateTime]
+                    return formatter
+                }()
+            ]
+
+            for formatter in formatters {
+                if let date = formatter.date(from: dateString) {
+                    return date
+                }
+            }
+
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
+        }
+        return decoder
     }
 
     // MARK: - REST API
@@ -102,32 +144,7 @@ class SupabaseService {
             queryParams: queryParams
         )
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let dateString = try container.decode(String.self)
-
-            let formatters: [ISO8601DateFormatter] = [
-                {
-                    let formatter = ISO8601DateFormatter()
-                    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                    return formatter
-                }(),
-                {
-                    let formatter = ISO8601DateFormatter()
-                    formatter.formatOptions = [.withInternetDateTime]
-                    return formatter
-                }()
-            ]
-
-            for formatter in formatters {
-                if let date = formatter.date(from: dateString) {
-                    return date
-                }
-            }
-
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
-        }
+        let decoder = Self.flexibleDateDecoder()
 
         return try decoder.decode([T].self, from: data)
     }
@@ -214,10 +231,7 @@ class SupabaseService {
             body: bodyData
         )
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        return try decoder.decode(T.self, from: data)
+        return try Self.flexibleDateDecoder().decode(T.self, from: data)
     }
 }
 
@@ -228,9 +242,13 @@ enum SupabaseError: LocalizedError {
     case noData
     case unauthorized
     case invalidResponse
+    /// A refusal with a reason code, e.g. `pro_required`, `monthly_limit_reached`
+    case rejected(code: String, message: String)
 
     var errorDescription: String? {
         switch self {
+        case .rejected(_, let message):
+            return message
         case .requestFailed:
             return "The request failed. Please try again."
         case .noData:
@@ -240,5 +258,10 @@ enum SupabaseError: LocalizedError {
         case .invalidResponse:
             return "The server returned an invalid response."
         }
+    }
+
+    var refusalCode: String? {
+        if case .rejected(let code, _) = self { return code }
+        return nil
     }
 }

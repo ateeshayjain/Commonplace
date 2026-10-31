@@ -19,6 +19,12 @@ struct ContentView: View {
                 AuthView()
             }
         }
+        // Renewals, purchases from other devices and this month's AI usage
+        .task(id: authService.currentUser?.id) {
+            if authService.currentUser != nil {
+                SubscriptionService.shared.start()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             // A launch while offline leaves the profile unloaded; try again
             if phase == .active {

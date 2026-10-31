@@ -8,6 +8,8 @@ class LibraryViewModel: ObservableObject {
     @Published var isLoading = false
     /// Links saved from this device whose AI processing has not finished yet.
     @Published var pendingSaveCount = 0
+    /// Shown above the list when a save came back without a summary
+    @Published var waitingNotice: String?
     /// Second filter axis next to categories: where the item came from.
     @Published var selectedSource: SourceType? {
         didSet { applyFilters() }
@@ -333,6 +335,10 @@ class LibraryViewModel: ObservableObject {
             switch document.processingStatus {
             case .completed:
                 await loadDocuments()
+                if document.isWaitingForSummary {
+                    waitingNotice = "Saved without a summary: you've used this month's free AI saves. Open it to summarise it later, or go Pro."
+                }
+                await SubscriptionService.shared.refreshUsage()
                 return
             case .failed:
                 self.error = DocumentProcessingError(

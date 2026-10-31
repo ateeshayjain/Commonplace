@@ -1,0 +1,109 @@
+{
+  "identifier" : "5A3C9E21",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_developerTeamID" : "3M5BRKQ345",
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_IN",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "IND",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21581001",
+      "localizations" : [
+        {
+          "description" : "Unlimited AI summaries and Compose",
+          "displayName" : "Sangrah Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "Sangrah Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "299",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6754000001",
+          "introductoryOffer" : {
+            "internalID" : "6754000011",
+            "numberOfPeriods" : 1,
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1M"
+          },
+          "localizations" : [
+            {
+              "description" : "Unlimited AI summaries and Compose, billed monthly",
+              "displayName" : "Sangrah Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "sangrah.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Sangrah Pro Monthly",
+          "subscriptionGroupID" : "21581001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "2499",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6754000002",
+          "introductoryOffer" : {
+            "internalID" : "6754000012",
+            "numberOfPeriods" : 1,
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1M"
+          },
+          "localizations" : [
+            {
+              "description" : "Unlimited AI summaries and Compose, billed yearly",
+              "displayName" : "Sangrah Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "sangrah.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Sangrah Pro Yearly",
+          "subscriptionGroupID" : "21581001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

@@ -66,7 +66,9 @@ struct FAQView: View {
         Item(question: "How do I delete a save?",
              answer: "Open it, tap \u{22EF} and choose Delete."),
         Item(question: "Is Sangrah free?",
-             answer: "Yes. During the beta everything is free, with no limits.")
+             answer: "Yes. Your Library, search, quotes, PDFs, the widget and the Weekly Summary are free with no limits, and 20 saves a month get an AI summary. After that, saves are still kept and wait for a summary until the next month. Sangrah Pro (first month free) gives unlimited AI summaries on a stronger model, plus Compose."),
+        Item(question: "How do I cancel Sangrah Pro?",
+             answer: "In Profile, tap Manage Subscription, or go to Settings > Apple ID > Subscriptions. You keep Pro until the end of the period you've paid for. Deleting your account doesn't cancel the subscription, so cancel it first.")
     ]
 
     var body: some View {
@@ -103,6 +105,8 @@ struct PrivacyPolicyView: View {
              text: "Your data is stored with Supabase, which also handles sign-in. To read a link, Sangrah fetches the page directly or through a reader service (Jina Reader for articles, FxTwitter for posts on X). The text, or the screenshots, is then sent to Anthropic's Claude API to write the summary, key points, tags and quotes. Under Anthropic's commercial terms, this data isn't used to train its models."),
         Part(heading: "Who can see it",
              text: "Only you. Your saves, notes and quotes are locked to your account, and screenshots are stored privately. PDFs are kept at a long, unguessable link: anyone you share a PDF with can open it."),
+        Part(heading: "Subscriptions",
+             text: "Sangrah Pro is bought and billed through the App Store; Sangrah never sees your payment details. Sangrah stores which plan you're on, when it renews or ends, and the App Store's ID for your purchase, and checks your subscription's status with Apple."),
         Part(heading: "Connected accounts",
              text: "If you connect X or LinkedIn to publish posts, Sangrah stores the access tokens those services give it, and uses them only to post what you ask it to."),
         Part(heading: "What Sangrah doesn't do",

@@ -86,6 +86,23 @@ class DocumentService {
         )
     }
 
+    struct SummariseResponse: Codable {
+        let started: [UUID]
+        let limitReached: Bool
+    }
+
+    /// Summarises one save that was waiting for a free AI credit. Throws
+    /// `SupabaseError.rejected(code: "monthly_limit_reached", ...)` when none is left.
+    func summariseWaitingSave(_ id: UUID) async throws -> SummariseResponse {
+        try await supabase.invokeFunction(name: "process-url", body: ["documentId": id.uuidString.lowercased()])
+    }
+
+    /// Summarises the newest waiting saves (after upgrading to Pro)
+    @discardableResult
+    func summariseWaitingSaves() async throws -> SummariseResponse {
+        try await supabase.invokeFunction(name: "process-url", body: ["resumeWaiting": true])
+    }
+
     // MARK: - Update Document
 
     func toggleFavorite(_ id: UUID, isFavorite: Bool) async throws {

@@ -17,6 +17,8 @@ struct DocumentDetailView: View {
     @State private var showingQuoteTooLong = false
     @State private var quoteSavedToast = false
     @ObservedObject private var savedQuotes = SavedQuoteService.shared
+    @ObservedObject private var subscriptions = SubscriptionService.shared
+    @State private var showingPaywall = false
     @Environment(\.dismiss) private var dismiss
 
     init(document: Document) {
@@ -47,13 +49,18 @@ struct DocumentDetailView: View {
                     quotesSection(quotes)
                 }
 
+                // Saved past the free month's AI credits: the text is below, the summary to come
+                if viewModel.document.isWaitingForSummary {
+                    waitingSection
+                }
+
                 // AI Summary
-                if let summary = document.aiSummaryShort {
+                if let summary = viewModel.document.aiSummaryShort {
                     summarySection(summary)
                 }
 
                 // Key Points
-                if let keyPoints = document.aiKeyPoints, !keyPoints.isEmpty {
+                if let keyPoints = viewModel.document.aiKeyPoints, !keyPoints.isEmpty {
                     keyPointsSection(keyPoints)
                 }
 
@@ -65,7 +72,7 @@ struct DocumentDetailView: View {
                 // Content preview, then the PDF. Every save gets both: the PDF is
                 // made on first open, so a stored pdfUrl only means it was opened
                 // or shared before
-                if !document.bodyPlain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !viewModel.document.bodyPlain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     contentPreviewSection(proxy: proxy)
                         .id(Self.contentAnchor)
                 }
@@ -158,6 +165,9 @@ struct DocumentDetailView: View {
         }
         .sheet(isPresented: $showingCampaign) {
             CampaignView(document: document)
+        }
+        .sheet(isPresented: $showingPaywall) {
+            PaywallView(reason: .saves)
         }
         .task {
             await viewModel.loadTags()
@@ -416,6 +426,48 @@ struct DocumentDetailView: View {
                 ForEach(tags) { tag in
                     CPTagChip(name: tag.name)
                 }
+            }
+        }
+    }
+
+    private var waitingSection: some View {
+        let plan = subscriptions.plan
+        let outOfCredits = plan?.savesRemaining == 0
+        return CPCard {
+            VStack(alignment: .leading, spacing: CPSpacing.sm) {
+                HStack {
+                    Image(systemName: "hourglass")
+                        .foregroundColor(.cpTint)
+                    Text("Waiting for a summary")
+                        .sectionHeaderStyle()
+                }
+
+                Group {
+                    if outOfCredits, let plan {
+                        Text("You've used this month's \(plan.saves.limit ?? 0) free AI saves, so this one is kept without a summary. Summarise it after \(PlanSummary.dayMonth(plan.periodEnds, calendar: .current)), or go Pro for unlimited.")
+                    } else if let remaining = plan?.savesRemaining {
+                        Text("Saved without a summary. You have \(remaining) AI \(remaining == 1 ? "save" : "saves") left this month.")
+                    } else {
+                        Text("Saved without a summary yet.")
+                    }
+                }
+                .font(.cpCallout)
+                .foregroundColor(.cpTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                if outOfCredits {
+                    CPButton("Go Pro", size: .medium, icon: "sparkles") { showingPaywall = true }
+                } else {
+                    CPButton("Summarise Now", size: .medium, isLoading: viewModel.isSummarising, icon: "sparkles") {
+                        Task { await viewModel.summarise() }
+                    }
+                }
+            }
+        }
+        .onChange(of: viewModel.needsUpgrade) { _, needed in
+            if needed {
+                showingPaywall = true
+                viewModel.needsUpgrade = false
             }
         }
     }

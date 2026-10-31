@@ -14,6 +14,8 @@ struct LibraryView: View {
     @State private var isSelectMode = false
     @State private var selectedDocuments: Set<UUID> = []
     @State private var showingCompose = false
+    @State private var showingComposePaywall = false
+    @ObservedObject private var subscriptions = SubscriptionService.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -48,6 +50,8 @@ struct LibraryView: View {
 
                     if viewModel.pendingSaveCount > 0 {
                         processingBanner
+                    } else if let notice = viewModel.waitingNotice {
+                        waitingBanner(notice)
                     }
 
                     // Content
@@ -176,6 +180,9 @@ struct LibraryView: View {
                     showingAddURL = true
                 }
             }
+            .sheet(isPresented: $showingComposePaywall) {
+                PaywallView(reason: .compose)
+            }
             .sheet(isPresented: $showingCompose) {
                 ComposeView(
                     documents: viewModel.documents.filter { selectedDocuments.contains($0.id) },
@@ -222,7 +229,12 @@ struct LibraryView: View {
                 Spacer()
 
                 Button {
-                    showingCompose = true
+                    // Compose is Pro only; the server enforces it too
+                    if subscriptions.plan?.isPro == false {
+                        showingComposePaywall = true
+                    } else {
+                        showingCompose = true
+                    }
                 } label: {
                     HStack {
                         Image(systemName: "sparkles")
@@ -349,6 +361,29 @@ struct LibraryView: View {
                 .font(.cpFootnote)
                 .foregroundColor(.cpTextSecondary)
             Spacer()
+        }
+        .padding(.horizontal, CPSpacing.screenHorizontal)
+        .padding(.bottom, CPSpacing.sm)
+    }
+
+    /// A save came back without a summary: the month's free AI saves are used up
+    private func waitingBanner(_ notice: String) -> some View {
+        HStack(alignment: .top, spacing: CPSpacing.sm) {
+            Image(systemName: "hourglass")
+                .foregroundColor(.cpTint)
+            Text(notice)
+                .font(.cpFootnote)
+                .foregroundColor(.cpTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button {
+                viewModel.waitingNotice = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.cpFootnote)
+                    .foregroundColor(.cpTextTertiary)
+            }
+            .accessibilityLabel("Dismiss")
         }
         .padding(.horizontal, CPSpacing.screenHorizontal)
         .padding(.bottom, CPSpacing.sm)

@@ -11,6 +11,7 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 - ✅ Built: Clean PDFs (Read Full Article, Share, Save to Files), Weekly Summary, Edit Title, saved categories, Delete Account
 - ✅ Built: Daily Quote home-screen widget (`SangrahWidget`) with Shuffle
 - ✅ Built: Phase 2 - Compose (multi-doc synthesis), Campaigns (social publishing), voice profiles, OAuth (Twitter/LinkedIn)
+- ✅ Built, not deployed: free and Pro tiers (StoreKit 2 "Sangrah Pro", limits enforced in Edge Functions); see [`docs/subscriptions.md`](docs/subscriptions.md)
 - 🚧 Shipping to TestFlight (see Release below); not yet on the App Store
 
 **Target Users:** Knowledge workers who save articles/threads and want AI insights.
@@ -22,7 +23,8 @@ iOS app for saving web content with AI-powered summaries. Users share URLs from 
 ## Tech Stack
 - **iOS:** Swift 5.9+, SwiftUI, iOS 17+ target
 - **Backend:** Supabase (PostgreSQL + Edge Functions + Auth)
-- **AI:** Claude API — Claude Sonnet 5.5 (`claude-sonnet-5-5`) for save enrichment (summaries, Key Idea, quotes, tags, screenshot transcription); Claude Opus 5.5 (`claude-opus-5-5`) for post generation and voice analysis; Claude Fable 5.1 (`claude-fable-5-1`) for multi-doc synthesis
+- **AI:** Claude API — save enrichment (summaries, Key Idea, quotes, tags, screenshot transcription) on Claude Sonnet 5.5 (`claude-sonnet-5-5`) for Pro and Claude Haiku 5.5 (`claude-haiku-5-5`) for free accounts; Claude Opus 5.5 (`claude-opus-5-5`) for post generation, voice analysis and multi-doc synthesis (Compose)
+- **Payments:** StoreKit 2 auto-renewable subscriptions, confirmed server-side through the App Store Server API
 - **Auth:** Sign in with Apple, Magic Link (OTP)
 - **OAuth:** Twitter OAuth 2.0 (PKCE), LinkedIn OAuth 2.0
 - **PDF:** pdf-lib (server-side generation)
@@ -36,14 +38,14 @@ iOS/
 ├── Commonplace/       # The app
 │   ├── App/           # CommonplaceApp.swift, ContentView.swift (tabs, commonplace://quotes), Config.swift
 │   ├── Core/
-│   │   ├── Models/    # Document, User, Category, SavedQuote, GeneratedAsset (Codable structs)
-│   │   ├── Services/  # Auth, Document, Supabase, SavedQuote, Category, WidgetQuoteSync, SharedAuthStore, Campaign
+│   │   ├── Models/    # Document, User, Category, SavedQuote, GeneratedAsset, Plan (Codable structs)
+│   │   ├── Services/  # Auth, Document, Supabase, SavedQuote, Category, WidgetQuoteSync, SharedAuthStore, Campaign, Subscription
 │   │   └── Networking/# APIClient
 │   ├── Features/      # MVVM per feature
 │   │   ├── Library/   # LibraryView + LibraryViewModel + Components/ (search box matches body text)
 │   │   ├── Detail/    # DocumentDetailView + ViewModel, QuoteCard (cards, credits, share sheet), PDFViewerView
 │   │   ├── Quotes/    # QuotesView + QuotesViewModel (bookmarked quotes tab)
-│   │   ├── Profile/   # ProfileView (+ Weekly Summary, Manage Categories), SupportViews (FAQ, Privacy, Contact)
+│   │   ├── Profile/   # ProfileView (+ Plan, Weekly Summary, Manage Categories), PaywallView, SupportViews (FAQ, Privacy, Contact)
 │   │   ├── Compose/   # ComposeView + ComposeViewModel (multi-doc synthesis)
 │   │   ├── Campaigns/ # CampaignView + CampaignViewModel (social publishing)
 │   │   └── Onboarding/# AuthView, OnboardingView
@@ -52,7 +54,8 @@ iOS/
 ├── CommonplaceShareExtension/ # Share sheet: links and screenshots
 ├── SangrahWidget/     # Daily Quote widget (WidgetKit + AppIntent shuffle)
 ├── Shared/            # WidgetQuote.swift: compiled into the app and the widget
-└── CommonplaceTests/  # XCTest unit tests (hosted in the app)
+├── CommonplaceTests/  # XCTest unit tests (hosted in the app)
+└── Sangrah.storekit   # Local StoreKit config ("Sangrah Pro" monthly + yearly, free month); used by the Run scheme and the StoreKit tests
 ```
 
 Targets: `Commonplace` (app), `CommonplaceShareExtension`, `SangrahWidget`, `CommonplaceTests`. The app, share extension and widget share the App Group `group.app.commonplace` (keychain session, widget quote pool).
@@ -64,6 +67,7 @@ Targets: `Commonplace` (app), `CommonplaceShareExtension`, `SangrahWidget`, `Com
 - **Auth:** `AuthService` injected via `@EnvironmentObject`
 - **Shared state:** `SavedQuoteService` and `CategoryService` are `@MainActor` singletons with optimistic changes that roll back on failure; they reset when the signed-in user changes
 - **Cross-screen updates:** `NotificationCenter` `.documentDeleted` / `.documentUpdated` keep the Library list in step with the detail screen
+- **Plan:** `SubscriptionService.shared.plan` is the server's answer from `verify-purchase` (tier, expiry, this month's usage). Never treat StoreKit's local entitlement as Pro; the server decides
 
 ### Data Flow
 ```
@@ -101,11 +105,18 @@ pending → fetching → extracting → enriching → rendering → completed
                                                       ↘ failed
 ```
 
-### Subscription Tiers (enforced in UI, not backend yet)
-| Tier | Saves/Month | Posts/Month |
-|------|-------------|-------------|
-| free | 50 | 10 |
-| pro/creator/team | unlimited | unlimited |
+### Subscription Tiers (enforced in Edge Functions; details in `docs/subscriptions.md`)
+| | Free | Pro (`pro`, `creator`, `team`) |
+|---|---|---|
+| AI-processed saves / calendar month (UTC) | 20, on Haiku 5.5; later saves are stored and wait (`documents.ai_waiting`) | unlimited, on Sonnet 5.5 |
+| Compose runs / month | none (paywall) | 10, on Opus 5.5 |
+| Everything without Claude (Library, search, quotes, PDFs, widget, Weekly Summary) | unlimited | unlimited |
+
+- Limits, models and product ids live in `supabase/functions/_shared/tiers.ts`; iOS `Plan.swift` only displays what `verify-purchase` returns
+- A Claude call takes a credit with `claimUsage` (`claim_ai_usage`, atomic) and gives it back with `releaseUsage` if Claude doesn't answer. If the check itself fails, the save waits; never run Claude unmetered
+- `users.subscription_tier` / `subscription_expires_at` can only be changed by the service role (trigger in migration 010)
+- Product ids: `sangrah.pro.monthly`, `sangrah.pro.yearly` (group "Sangrah Pro"); keep `tiers.ts`, `Plan.swift` and `Sangrah.storekit` in step
+- Campaigns (`generate-posts`) and voice analysis aren't limited yet
 
 ### Source Types
 twitter, linkedin, linkedinArticle, article, substack, medium, youtube, podcast, pdf, reddit, hackernews, instagram, threads, email, screenshot, manual, bookOcr (`book_ocr`), unknown
@@ -135,6 +146,9 @@ twitter, linkedin, linkedinArticle, article, substack, medium, youtube, podcast,
 - `saved_quotes` (migration 007): bookmarked quotes, unique per (user, document, text)
 - `screenshots` storage bucket (migration 008): private, `{user_id}/{batch}/{n}.jpg`, JPEG only, 6 MB
 - `categories`: built-in rows have `user_id` null; readers add and delete their own (delete policy: migration 009)
+- `ai_usage` (migration 010): Claude calls per user, calendar month and feature (`save`, `compose`). Readers can read theirs; only `claim_ai_usage` / `release_ai_usage` (service role) write
+- `app_store_subscriptions` (migration 010): one row per App Store original transaction, its owner, status, expiry and trial end; `users.subscription_tier` is derived from these rows
+- `documents.ai_waiting` (migration 010): a free save past the monthly limit, stored with its text and `processing_status = completed` so the Library shows it
 - Deleting an account (`delete-account`) removes storage files, then the `users` row (cascades to every table), then the auth user
 
 ### Sangrah Data Model (migration 004)
@@ -162,16 +176,18 @@ static let supabaseAnonKey = "YOUR_SUPABASE_ANON_KEY"
 - `oauth-connect`: OAuth flow handler for Twitter/LinkedIn (PKCE support)
 - `generate-pdf`: Clean PDF generation with pdf-lib, uploads to Supabase Storage (`PDF_LAYOUT_VERSION` must match `DocumentService.pdfLayoutVersion`)
 - `delete-account`: Deletes the caller's files, rows and auth user (Profile > Delete Account)
+- `verify-purchase`: confirms a StoreKit transaction with the App Store Server API, links it to the caller (only if Apple's `appAccountToken` names them) and sets the tier; with no transaction, returns the plan and this month's usage
+- `app-store-notifications`: App Store Server Notifications V2 (JWT verification off); re-reads the status from Apple, never trusts the notification body
 
 ### Claude API
 - Used in Edge Functions: `process-url`, `synthesize-content`, `generate-posts`, `analyze-style`
-- Models and SDK pin live in `supabase/functions/_shared/claude.ts` (`CLAUDE_MODELS`, `generateText`) — change them there, not per function
-  - `saves`: `claude-sonnet-5-5` (process-url). Chosen on 30 Oct 2026 from a side-by-side run of Opus, Sonnet and Haiku on 15 real saves: Sonnet matched Opus on word-for-word quotes and screenshot text at half the cost (about 1.4¢ per article save, 4¢ per screenshot save, against Opus at 2.8¢ and 8.1¢)
-  - `standard`: `claude-opus-5-5` (generate-posts, analyze-style)
-  - `deepReasoning`: `claude-fable-5-1` (synthesize-content; effort scales with `ThinkingDepth`)
+- Model ids live in `supabase/functions/_shared/models.ts` (`CLAUDE_MODELS`, re-exported by `claude.ts`, which pins the SDK and has `generateText`/`generateJSON`) — change them there, not per function
+  - `saves`: `claude-sonnet-5-5` (process-url, Pro). Chosen on 30 Oct 2026 from a side-by-side run of Opus, Sonnet and Haiku on 15 real saves: Sonnet matched Opus on word-for-word quotes and screenshot text at half the cost (about 1.4¢ per article save, 4¢ per screenshot save, against Opus at 2.8¢ and 8.1¢)
+  - `freeSaves`: `claude-haiku-5-5` (process-url, free tier; about 0.07¢ per article save, 0.2¢ per screenshot save)
+  - `standard`: `claude-opus-5-5` (generate-posts, analyze-style, synthesize-content; Compose effort scales with `ThinkingDepth`)
 - Thinking is always on for these models: control depth with `effort`, don't send `thinking: disabled`/`budget_tokens`, `temperature`, or assistant prefill (all return 400)
 - Read text blocks by `type`, not `content[0]` (responses can start with thinking blocks)
-- Server-side refusal fallback is enabled (`fallbacks: 'default'`); `generateText` throws on `stop_reason: "refusal"`
+- Server-side refusal fallback is enabled (`fallbacks: 'default'`) except for Haiku 5.5, which has none (`supportsServerFallback`); `generateText`/`generateJSON` throw on `stop_reason: "refusal"`
 - For JSON results use `generateJSON` (structured outputs via `output_config.format`); keep schemas to types/enums/required/`additionalProperties:false` and enforce lengths and counts in code
 - Tags: `_shared/tags.ts` (`slugify` must match the SQL slug rule; `attachTags` upserts by slug and links `document_tags`)
 - Env var: `ANTHROPIC_API_KEY` in Supabase secrets
@@ -245,7 +261,9 @@ For bug fixes:
 3. **Reviewer**: Verify fix, check for regressions
 
 ## Testing
-- iOS: `xcodebuild test -project iOS/Commonplace.xcodeproj -scheme Commonplace -destination 'platform=iOS Simulator,name=<iPhone>' CODE_SIGNING_ALLOWED=NO` runs `CommonplaceTests` (quote text and credits, widget daily pick and shuffle, category slugs, Weekly Summary maths, support links). Tests use the demo documents as fixtures
+- iOS: `xcodebuild test -project iOS/Commonplace.xcodeproj -scheme Commonplace -destination 'platform=iOS Simulator,name=<iPhone>' CODE_SIGNING_ALLOWED=NO` runs `CommonplaceTests` (quote text and credits, widget daily pick and shuffle, category slugs, Weekly Summary maths, support links, plan and trial reminder). Tests use the demo documents as fixtures
+- StoreKit: `SubscriptionStoreKitTests` reads `iOS/Sangrah.storekit` with StoreKitTest. The products test skips when StoreKit hasn't applied the file; it applies once the app has been run from Xcode on that simulator (the Run scheme points at `Sangrah.storekit`), after which the test passes from `xcodebuild` too. The two purchase tests run only with `SANGRAH_STOREKIT_PURCHASE_TESTS=1`: without the local StoreKit environment a purchase goes to the real Sandbox and waits on an Apple Account alert. They haven't passed yet
+- Free-plan screens in demo mode: launch a Debug build with `-SangrahDemoFreePlan` (Profile shows 0 of 20 left; Upgrade opens the paywall)
 - Edge Functions: `deno test supabase/functions/_shared` and `deno check` on each `index.ts`
 - CI (`.github/workflows/ci.yml`) builds the app, runs the iOS tests, type-checks and tests the Edge Functions on every push
 
@@ -254,3 +272,4 @@ For bug fixes:
 - `xcodebuild archive -scheme Commonplace -configuration Release -destination 'generic/platform=iOS' -allowProvisioningUpdates`, then `scripts/upload-build.sh <archive>` with `ASC_KEY_ID` / `ASC_ISSUER_ID`
 - A new bundle id (new extension) has no App Store profile yet and the API key can't create one: export once with the Xcode account (`xcodebuild -exportArchive ... -exportOptionsPlist iOS/ExportOptions.plist -allowProvisioningUpdates`, no key flags), then upload the .ipa with `xcrun altool --upload-app`
 - Production deploys (Edge Functions, migrations) need the owner's explicit go-ahead each time
+- Subscriptions: App Store Connect setup, secrets (`APP_STORE_ISSUER_ID`, `APP_STORE_KEY_ID`, `APP_STORE_PRIVATE_KEY`, `APP_STORE_BUNDLE_ID`) and the deploy order (migration 010 before the functions) are in `docs/subscriptions.md`

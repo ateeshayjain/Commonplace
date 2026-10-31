@@ -53,6 +53,10 @@ struct DocumentRow: View {
                     .foregroundColor(.cpTextSecondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+            } else if document.isWaitingForSummary {
+                Label("Waiting for a summary", systemImage: "hourglass")
+                    .font(.cpFootnote)
+                    .foregroundColor(.cpTextSecondary)
             }
 
             // Footer

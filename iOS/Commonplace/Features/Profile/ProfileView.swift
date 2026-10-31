@@ -10,6 +10,9 @@ struct ProfileView: View {
     @State private var showingDeleteAccount = false
     @State private var isDeletingAccount = false
     @State private var deleteAccountError: Error?
+    @ObservedObject private var subscriptions = SubscriptionService.shared
+    @State private var showingPaywall = false
+    @State private var showingManageSubscription = false
 
     var body: some View {
         NavigationStack {
@@ -64,6 +67,8 @@ struct ProfileView: View {
                         .padding(.vertical, CPSpacing.xs)
                     }
                 }
+
+                planSection
 
                 // Stats - Now using real data!
                 Section("Library Stats") {
@@ -182,7 +187,9 @@ struct ProfileView: View {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete Account", role: .destructive) { deleteAccount() }
             } message: {
-                Text("This permanently deletes your saves, quotes, notes, PDFs and screenshots. It can't be undone.")
+                Text(subscriptions.plan?.isPro == true
+                     ? "This permanently deletes your saves, quotes, notes, PDFs and screenshots. It can't be undone. It doesn't cancel Sangrah Pro: cancel that in Manage Subscription first."
+                     : "This permanently deletes your saves, quotes, notes, PDFs and screenshots. It can't be undone.")
             }
             .alert("Couldn't Delete Your Account", isPresented: .init(
                 get: { deleteAccountError != nil },
@@ -208,6 +215,113 @@ struct ProfileView: View {
             .task {
                 await viewModel.loadStats()
             }
+            .task {
+                if subscriptions.plan == nil { await subscriptions.refresh() }
+            }
+            .refreshable {
+                await viewModel.loadStats()
+                await subscriptions.refresh()
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView(reason: .upgrade)
+            }
+            .manageSubscriptionsSheet(isPresented: $showingManageSubscription)
+            .onChange(of: showingManageSubscription) { _, showing in
+                // A cancellation or plan change shows up once the sheet closes
+                if !showing { Task { await subscriptions.refresh() } }
+            }
+            .alert("Restore Purchases", isPresented: .init(
+                get: { subscriptions.error != nil && !showingPaywall },
+                set: { if !$0 { subscriptions.error = nil } }
+            )) {
+                Button("OK", role: .cancel) { subscriptions.error = nil }
+            } message: {
+                Text(subscriptions.error?.localizedDescription ?? "Something went wrong.")
+            }
+        }
+    }
+
+    // MARK: - Plan
+
+    /// The reader's plan, this month's AI saves, and the way to upgrade,
+    /// manage or restore a subscription
+    @ViewBuilder
+    private var planSection: some View {
+        let plan = subscriptions.plan
+        Section {
+            if let plan {
+                if plan.isPro {
+                    HStack {
+                        Image(systemName: "sparkles")
+                            .foregroundColor(.cpTint)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sangrah Pro")
+                                .font(.cpBody)
+                            if let status = plan.statusText() {
+                                Text(status)
+                                    .font(.cpCaption1)
+                                    .foregroundColor(.cpTextSecondary)
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    StatsRow(icon: "doc.text.magnifyingglass", title: plan.savesLeftText, value: "")
+                    if let footnote = plan.savesFootnote() {
+                        Text(footnote)
+                            .font(.cpCaption1)
+                            .foregroundColor(.cpTextSecondary)
+                            .padding(.leading, 32)
+                    }
+                }
+
+                if plan.isPro, let limit = plan.compose.limit {
+                    StatsRow(icon: "square.and.pencil", title: "Compose", value: "\(plan.composeRemaining) of \(limit) left")
+                }
+            }
+
+            if plan?.isPro == true {
+                Button {
+                    showingManageSubscription = true
+                } label: {
+                    SettingsRow(icon: "creditcard", title: "Manage Subscription")
+                }
+            } else {
+                Button {
+                    showingPaywall = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Upgrade to Pro")
+                                .font(.cpHeadline)
+                                .foregroundColor(.cpText)
+                            Text("Unlimited AI summaries, Compose, first month free")
+                                .font(.cpFootnote)
+                                .foregroundColor(.cpTextSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.cpTextTertiary)
+                    }
+                }
+            }
+
+            Button {
+                Task { await subscriptions.restore() }
+            } label: {
+                HStack {
+                    SettingsRow(icon: "arrow.clockwise", title: "Restore Purchases")
+                    if subscriptions.isRestoring {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(subscriptions.isRestoring)
+        } header: {
+            Text("Plan")
         }
     }
 
